@@ -92,21 +92,17 @@ This library is developed based on the well-known package of torchattacks [[link
 ### Please check below settings to successfully run this code. If not, follow step by step during filling the checklist in.
 
 - [ ] To utilize FFCV [[link]](https://github.com/libffcv/ffcv), you should install it on conda virtual environment.
-I use python version 3.8, pytorch 1.7.1, torchvision 0.8.2, and cuda 10.1. For more different version, you can refer to PyTorch official site [[link]](https://pytorch.org/get-started/previous-versions/). 
+I use python version 3.9, pytorch, torchvision, and cuda 11.3. For more different version, you can refer to PyTorch official site [[link]](https://pytorch.org/get-started/previous-versions/). 
 
-> conda create -y -n ffcv python=3.8 cupy pkg-config compilers libjpeg-turbo opencv pytorch==1.7.1 torchvision==0.8.2 cudatoolkit=10.1 numba -c pytorch -c conda-forge
+> conda create -y -n ffcv python=3.9 cupy pkg-config compilers libjpeg-turbo opencv pytorch torchvision cudatoolkit=11.3 numba cudnn -c pytorch -c conda-forge
 
 - [ ] Activate the created environment by conda
 
 > conda activate ffcv
 
-- [ ] And, it would be better to install cudnn to more accelerate GPU. (Optional)
-
-> conda install cudnn -c conda-forge
-
 - [ ] To install FFCV, you should download it in pip and install torchattacks [[link]](https://github.com/Harry24k/adversarial-attacks-pytorch) to run adversarial attack.
 
-> pip install ffcv torchattacks==3.1.0
+> pip install ffcv torchattacks
 
 - [ ] To guarantee the execution of this code, please additionally install library in requirements.txt (matplotlib, tqdm)
 

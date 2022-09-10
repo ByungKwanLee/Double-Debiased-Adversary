@@ -72,16 +72,12 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
     decoder = None
 
     if dataset == 'cifar10':
-        mean = torch.tensor([0.4914, 0.4822, 0.4465])*255
         img_size = 32
     if dataset == 'cifar100':
-        mean = torch.tensor([0.5071, 0.4867, 0.4408])*255
         img_size = 32
     if dataset == 'svhn':
-        mean = torch.tensor([0.43090966, 0.4302428, 0.44634357])*255
         img_size = 32
     if dataset == 'tiny':
-        mean = torch.tensor([0.48024578664982126, 0.44807218089384643, 0.3975477478649648])*255
         img_size = 64
 
     if dataset == 'imagenet':
@@ -153,7 +149,8 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
 
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
                                 num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
-                                   distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline})
+                                   distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
+                                   seed = 0)
 
 
     return loaders['train'], loaders['test'], decoder
