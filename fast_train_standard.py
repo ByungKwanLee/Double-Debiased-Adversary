@@ -32,23 +32,25 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--NAME', default='STANDARD', type=str)
 parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--depth', default=16, type=int, help='cait depth = 24')
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12355", type=str)
+
+# transformer parameter
+parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--img_resize', default=224, type=int, help='32/224')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16')
-parser.add_argument('--gpu', default='0,1', type=str)
-parser.add_argument('--port', default="12356", type=str)
-
-# learning parameter
-parser.add_argument('--learning_rate', default=3e-2, type=float) #1e-4 for ViT
-parser.add_argument('--weight_decay', default=0, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=64, type=float)
-parser.add_argument('--pretrain', default=True, type=bool)
-parser.add_argument('--epochs', default=300, type=int)
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument("--max_grad_norm", default=1.0, type=float)
+
+# learning parameter
+parser.add_argument('--epochs', default=30, type=int)
+parser.add_argument('--learning_rate', default=0.1, type=float) #1e-4 for ViT
+parser.add_argument('--weight_decay', default=5e-4, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--pretrain', default=True, type=bool)
 
 args = parser.parse_args()
 
@@ -67,7 +69,7 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, epoch):
+def train(net, trainloader, optimizer, lr_scheduler, scaler):
     net.train()
     train_loss = 0
     correct = 0
@@ -85,7 +87,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, epoch):
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
 
-        if args.network in ['vit', 'deit', 'swin', 'cait', 'tnt']:
+        if args.network in transformer_list:
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.max_grad_norm)
 
         # Accerlating backward propagation
@@ -148,7 +150,7 @@ def test(net, testloader, lr_scheduler, rank):
 
         best_acc = acc
         if rank == 0:
-            if args.network in ['vit', 'deit', 'cait', 'tnt']:
+            if args.network in transformer_list:
                 torch.save(state, './checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
                                                                                             args.network, args.tran_type,
                                                                                             args.patch_size, args.img_resize))
@@ -191,10 +193,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
-    if args.network in ['vit', 'deit', 'swin', 'cait', 'tnt']:
-        upsample = True
-    else:
-        upsample = False
+    # upsampling for transformer
+    upsample = True if args.network in transformer_list else False
 
     # fast dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset, train_batch_size=args.batch_size,
@@ -207,7 +207,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint(f'==> {checkpoint_name}', rank)
         rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
-    if args.network in ['vit', 'deit', 'swin', 'cait', 'tnt']:
+    if args.network in transformer_list:
         t_total = args.num_steps
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
@@ -215,19 +215,20 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     else:
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=5*len(trainloader) if args.dataset != 'imagenet' and args.dataset != 'tiny' else 2 * len(trainloader),
-        step_size_down=(args.epochs-5)*len(trainloader) if args.dataset != 'imagenet' and args.dataset != 'tiny' else (args.epochs - 2) * len(trainloader))
+        step_size_up=int(args.epochs/6*len(trainloader)) if args.dataset != 'imagenet' and args.dataset != 'tiny' else 2 * len(trainloader),
+        step_size_down=int(args.epochs/3*len(trainloader)) if args.dataset != 'imagenet' and args.dataset != 'tiny' else (args.epochs - 2) * len(trainloader),
+        mode='triangular2')
 
     # training and testing
     for epoch in range(args.epochs):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
-            if args.network in ['vit', 'deit', 'swin', 'cait', 'tnt']:
+            if args.network in transformer_list:
                 res = 224
             else:
                 res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
             decoder.output_size = (res, res)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, epoch)
+        train(net, trainloader, optimizer, lr_scheduler, scaler)
         test(net, testloader, lr_scheduler, rank)
 
 def run():

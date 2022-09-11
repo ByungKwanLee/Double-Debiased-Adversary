@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from collections import OrderedDict
 
+transformer_list = ['vit', 'deit', 'swin', 'cait', 'tnt']
+
 def do_freeze(net):
     for params in net.parameters():
         params.requires_grad = False

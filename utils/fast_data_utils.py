@@ -129,9 +129,9 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         for name in ['train', 'test']:
             if name == 'train':
                 if upsample:
-                    image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((224, 224), scale=(0.05, 1.0)), RandomHorizontalFlip()]
+                    image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((224, 224), scale=(0.5, 1.0)), RandomHorizontalFlip()]
                 else:
-                    image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((img_size, img_size), scale=(0.05, 1.0)), RandomHorizontalFlip()]
+                    image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((img_size, img_size), scale=(0.5, 1.0)), RandomHorizontalFlip()]
             else:
                 if upsample:
                     image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((224,224), ratio=1)]
