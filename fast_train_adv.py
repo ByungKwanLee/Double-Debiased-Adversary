@@ -45,7 +45,7 @@ parser.add_argument("--max_grad_norm", default=1.0, type=float)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=256, type=float)
@@ -278,8 +278,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         # args.epochs = args.epochs if args.dataset !='tiny' else 4
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=int(args.epochs/15*len(trainloader)) if args.dataset != 'imagenet' and args.dataset != 'tiny' else 2 * len(trainloader),
-        step_size_down=int(args.epochs*14/15*len(trainloader)) if args.dataset != 'imagenet' and args.dataset != 'tiny' else (args.epochs - 2) * len(trainloader))
+        step_size_up=int(args.epochs/15*len(trainloader)),
+        step_size_down=int(args.epochs*14/15*len(trainloader)))
 
     # training and testing
     for epoch in range(args.epochs):
