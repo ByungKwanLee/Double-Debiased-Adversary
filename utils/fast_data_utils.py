@@ -9,8 +9,7 @@ from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, \
     RandomResizedCropRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
-from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
-    RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage, NormalizeImage
+from ffcv.transforms import RandomHorizontalFlip, RandomTranslate, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 from ffcv.writer import DatasetWriter
 
@@ -129,9 +128,13 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
         for name in ['train', 'test']:
             if name == 'train':
                 if upsample:
-                    image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((224, 224), scale=(0.5, 1.0)), RandomHorizontalFlip()]
+                    image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((224,224), ratio=1),
+                                                       RandomHorizontalFlip(),
+                                                       RandomTranslate(padding=28)]
                 else:
-                    image_pipeline: List[Operation] = [RandomResizedCropRGBImageDecoder((img_size, img_size), scale=(0.5, 1.0)), RandomHorizontalFlip()]
+                    image_pipeline: List[Operation] = [SimpleRGBImageDecoder(),
+                                                       RandomHorizontalFlip(),
+                                                       RandomTranslate(padding=int(img_size/8.))]
             else:
                 if upsample:
                     image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((224,224), ratio=1)]

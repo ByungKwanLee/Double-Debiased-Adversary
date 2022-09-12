@@ -14,22 +14,18 @@ class VGG(nn.Module):
         self,
         features: nn.Module,
         num_classes: int = 1000,
+        dataset: str = '',
         init_weights: bool = True,
-        dropout: float = 0.5,
         mean: torch.tensor = None,
         std: torch.tensor = None
     ) -> None:
         super().__init__()
         self.features = features
-        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
+
+        pooling_size = 1 if dataset != 'imagenet' else 7
+        self.avgpool = nn.AdaptiveAvgPool2d((pooling_size, pooling_size))
         self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.ReLU(True),
-            nn.Dropout(p=dropout),
-            nn.Linear(4096, 4096),
-            nn.ReLU(True),
-            nn.Dropout(p=dropout),
-            nn.Linear(4096, num_classes),
+            nn.Linear(512 * pooling_size**2, num_classes),
         )
 
         # configuration
@@ -85,4 +81,4 @@ def vgg(depth, dataset, mean, std):
     elif dataset == 'imagenet':
         num_classes = 1000
 
-    return VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, mean=mean, std=std)
+    return VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, dataset=dataset, mean=mean, std=std)
