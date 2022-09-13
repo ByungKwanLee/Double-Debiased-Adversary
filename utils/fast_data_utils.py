@@ -2,6 +2,7 @@ from typing import List
 
 import torch
 import torchvision
+from utils.utils import *
 
 from ffcv.fields import IntField, RGBImageField
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
@@ -15,6 +16,7 @@ from ffcv.writer import DatasetWriter
 
 
 def save_data_for_beton(dataset, root='../data'):
+    print(dataset)
     if dataset == 'cifar10':
         trainset = torchvision.datasets.CIFAR10(root=root, train=True, download=True)
         testset = torchvision.datasets.CIFAR10(root=root, train=False, download=True)
@@ -50,6 +52,62 @@ def save_data_for_beton(dataset, root='../data'):
                 'label': IntField(),
             }, num_workers=16)
             writer.from_indexed_dataset(ds, chunksize=100)
+
+    elif dataset == 'imagenet-a':
+        testset = torchvision.datasets.ImageFolder('/mnt/hard1/jh_datasets/imagenet-a')
+
+        # for large dataset
+        datasets = {
+            'test': testset
+        }
+        for (name, ds) in datasets.items():
+            writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{dataset}_{name}.beton', {
+                'image': RGBImageField(write_mode='jpg',
+                                       max_resolution=256,
+                                       compress_probability=0.5,
+                                       jpeg_quality=90),
+                'label': IntField(),
+            }, num_workers=16)
+            writer.from_indexed_dataset(ds, chunksize=100)
+
+    elif dataset == 'imagenet-r':
+        testset = torchvision.datasets.ImageFolder('/mnt/hard1/jh_datasets/imagenet-r')
+
+        # for large dataset
+        datasets = {
+            'test': testset
+        }
+        for (name, ds) in datasets.items():
+            writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{dataset}_{name}.beton', {
+                'image': RGBImageField(write_mode='jpg',
+                                       max_resolution=256,
+                                       compress_probability=0.5,
+                                       jpeg_quality=90),
+                'label': IntField(),
+            }, num_workers=16)
+            writer.from_indexed_dataset(ds, chunksize=100)
+
+    elif dataset == 'imagenet-c':
+
+        # for large dataset
+        datasets = {
+            'blur': ['defocus_blur', 'glass_blur', 'motion_blur', 'zoom_blur'],
+            'digital': ['contrast', 'elastic_transform', 'pixelate'],
+            'extra': ['gaussian_blur', 'saturate', 'spatter', 'speckle_noise'],
+            'noise': ['gaussian_noise', 'impulse_noise', 'shot_noise'],
+            'weather': ['brightness', 'fog', 'frost', 'snow']
+        }
+        for (name, list) in datasets.items():
+            for ds in list:
+                for i in range(1,6):
+                    writer = DatasetWriter(f'/mnt/hard1/lbk/{dataset}/{name}/{ds}/{str(i)}.beton', {
+                        'image': RGBImageField(write_mode='jpg',
+                                               max_resolution=256,
+                                               compress_probability=0.5,
+                                               jpeg_quality=90),
+                        'label': IntField(),
+                    }, num_workers=16)
+                    writer.from_indexed_dataset(eval(ds+'__'+str(i)), chunksize=100)
 
     else:
         # for small dataset
@@ -117,6 +175,106 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
                                    num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
                                    distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
                                    seed = 0)
+
+    elif dataset == 'imagenet-a':
+        # fix size
+        orgin_size = 256
+        test_size = 224
+
+        paths = {
+            'test': '/mnt/hard1/lbk/imagenet-a/imagenet-a_test.beton',
+        }
+
+        image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size / orgin_size)]
+        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(),
+                                           ToDevice_modified(torch.device(gpu), non_blocking=True)]
+
+        image_pipeline.extend([
+            ToTensor(),
+            ToDevice_modified(torch.device(gpu), non_blocking=True),
+            ToTorchImage(),
+            Normalize_and_Convert(torch.float16, True)
+        ])
+        if shuffle:
+            order = OrderOption.SEQUENTIAL
+        else:
+            order = OrderOption.RANDOM
+
+        # for large dataset
+        loaders = {}
+        loaders['traing'] = None
+        loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
+                                 num_workers=num_workers, order=order, drop_last=False, os_cache=True,
+                                 distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
+                                 seed=0)
+
+    elif dataset == 'imagenet-r':
+        # fix size
+        orgin_size = 256
+        test_size = 224
+
+        paths = {
+            'test': '/mnt/hard1/lbk/imagenet-r/imagenet-r_test.beton',
+        }
+
+
+        image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size/orgin_size)]
+        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(), ToDevice_modified(torch.device(gpu), non_blocking=True)]
+
+        image_pipeline.extend([
+            ToTensor(),
+            ToDevice_modified(torch.device(gpu), non_blocking=True),
+            ToTorchImage(),
+            Normalize_and_Convert(torch.float16, True)
+        ])
+        if shuffle:
+            order = OrderOption.SEQUENTIAL
+        else:
+            order = OrderOption.RANDOM
+
+        # for large dataset
+        loaders = {}
+        loaders['traing'] = None
+        loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
+                               num_workers=num_workers, order=order, drop_last=False, os_cache=True,
+                               distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
+                               seed = 0)
+
+    elif 'imagenet-c' in dataset:
+
+        dataset, category, sub_category, degree_number = dataset.split('/')
+
+        # fix size
+        orgin_size = 256
+        test_size = 224
+
+        paths = {
+            'test': f'/mnt/hard1/lbk/imagenet-c/{category}/{sub_category}/{degree_number}.beton',
+        }
+
+        image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size / orgin_size)]
+        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(),
+                                           ToDevice_modified(torch.device(gpu), non_blocking=True)]
+
+        image_pipeline.extend([
+            ToTensor(),
+            ToDevice_modified(torch.device(gpu), non_blocking=True),
+            ToTorchImage(),
+            Normalize_and_Convert(torch.float16, True)
+        ])
+        if shuffle:
+            order = OrderOption.SEQUENTIAL
+        else:
+            order = OrderOption.RANDOM
+
+        # for large dataset
+        loaders = {}
+        loaders['traing'] = None
+        loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
+                                 num_workers=num_workers, order=order, drop_last=False, os_cache=True,
+                                 distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
+                                 seed=0)
+
     else:
         # for small dataset
         paths = {

@@ -9,7 +9,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 # parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--dataset', default='imagenet-c', type=str)
 parser.add_argument('--gpu', default='0', type=str)
 args = parser.parse_args()
 
