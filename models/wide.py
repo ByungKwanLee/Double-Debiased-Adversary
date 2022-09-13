@@ -55,9 +55,16 @@ class WideResNet(nn.Module):
         self.num_classes = num_classes
 
         block = BasicBlock
+
         # 1st conv before any network block
-        self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1,
-                               padding=1, bias=False)
+        if self.num_classes == 1000:
+            self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=7, stride=2,
+                                   padding=3, bias=False)
+        else:
+            self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1,
+                                   padding=1, bias=False)
+
+
         # 1st block
         self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
         # 2nd block
