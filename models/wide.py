@@ -80,23 +80,13 @@ class WideResNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
-    def forward(self, x: torch.Tensor, int: bool=False, pop: bool=False):
-        if int:
-            out = self.avgpool(x)
-            out = out.view(-1, self.nChannels)
-            return self.fc(out)
-
-        else:
+    def forward(self, x):
             out = (x - self.mean) / self.std
             out = self.conv1(out)
             out = self.block1(out)
             out = self.block2(out)
             out = self.block3(out)
             out = self.relu(self.bn1(out))
-
-            if pop:
-                return out
-
             out = self.avgpool(out)
             out = out.view(-1, self.nChannels)
             return self.fc(out)
