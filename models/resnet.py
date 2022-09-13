@@ -157,7 +157,7 @@ class ResNet(nn.Module):
         self.groups = groups
         self.base_width = width_per_group
 
-        if num_classes == 1000:
+        if self.num_classes == 1000:
             self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
                                    bias=False)
         else:
@@ -219,40 +219,27 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def _forward_impl(self, x: Tensor, int: bool=False, pop: bool=False) -> Tensor:
+    def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
-        if int:
-            x = self.avgpool(x)
-            x = torch.flatten(x, 1)
-            x = self.fc(x)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        if self.num_classes == 1000:
+            x = self.maxpool(x)
 
-            return x
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
 
-        else:
-            x = (x - self.mean) / self.std # normalize by LBK
-            x = self.conv1(x)
-            x = self.bn1(x)
-            x = self.relu(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
 
-            if self.num_classes == 1000:
-                x = self.maxpool(x)
+        return x
 
-            x = self.layer1(x)
-            x = self.layer2(x)
-            x = self.layer3(x)
-            x = self.layer4(x)
-
-            if pop:
-                return x
-
-            x = self.avgpool(x)
-            x = torch.flatten(x, 1)
-            x = self.fc(x)
-
-            return x
-
-    def forward(self, x: Tensor, int: bool=False, pop: bool=False) -> Tensor:
-        return self._forward_impl(x, int, pop)
+    def forward(self, x: Tensor) -> Tensor:
+        return self._forward_impl(x)
 
 def resnet(depth=18, dataset='imagenet', mean=None, std=None):
 
