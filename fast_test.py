@@ -21,11 +21,11 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--adv', default=False, type=bool)
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='swin', type=str)
+parser.add_argument('--adv', default=True, type=bool)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=19, type=int)
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
-parser.add_argument('--depth', default=12, type=int)
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=4, type=int, help='4/16/32')
 parser.add_argument('--gpu', default='0', type=str)
@@ -34,14 +34,14 @@ parser.add_argument('--batch_size', default=128, type=float)
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=8/255, type=float)
-parser.add_argument('--steps', default=30, type=int)
+parser.add_argument('--steps', default=10, type=int)
 
 args = parser.parse_args()
 
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-if args.network in ['vit', 'deit', 'swin']:
+if args.network in transformer_list:
     upsample = True
 else:
     upsample = False
@@ -84,7 +84,7 @@ checkpoint_module(net_checkpoint, net)
 # init criterion
 criterion = nn.CrossEntropyLoss()
 
-def test():
+def adv_test():
     net.eval()
 
     attack_module = {}
@@ -216,9 +216,9 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    set_random(777)
-    test()
-    #clean_test()
+    # set_random(777)
+    clean_test()
+    adv_test()
     #measure_adversarial_drift()
 
 

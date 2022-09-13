@@ -29,9 +29,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--depth', default=50, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12356", type=str)
 
@@ -41,7 +41,6 @@ parser.add_argument('--img_resize', default=224, type=int, help='default/224/384
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
-parser.add_argument("--max_grad_norm", default=1.0, type=float)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
@@ -91,9 +90,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
-
-        if args.network in transformer_list:
-            torch.nn.utils.clip_grad_norm_(net.parameters(), args.max_grad_norm)
 
         # Accelerating backward propagation
         scaler.scale(loss).backward()
