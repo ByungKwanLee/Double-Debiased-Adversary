@@ -459,7 +459,6 @@ class VisionTransformer(nn.Module):
 
     def forward(self, x):
         x = (x - self.mean) / self.std
-
         x = self.forward_features(x)
         x = self.forward_head(x)
         return x
@@ -668,16 +667,12 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
 def vit(depth, dataset, vit_type, img_size, patch_size, pretrained=False, mean=None, std=None):
     if dataset == 'cifar10' or dataset == 'svhn':
         num_classes = 10
-
     elif dataset == 'cifar100':
         num_classes = 100
-
     elif dataset == 'tiny':
         num_classes = 200
-
     elif dataset == 'imagenet':
         num_classes = 1000
-
     else:
         raise NotImplementedError
 
