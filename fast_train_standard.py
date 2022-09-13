@@ -42,7 +42,6 @@ parser.add_argument('--img_resize', default=224, type=int, help='32/224')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
-parser.add_argument("--max_grad_norm", default=1.0, type=float)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
@@ -86,9 +85,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler):
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
-
-        if args.network in transformer_list:
-            torch.nn.utils.clip_grad_norm_(net.parameters(), args.max_grad_norm)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
