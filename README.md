@@ -23,7 +23,7 @@ on Volta GPU architecture.
 ---
 
 ## Hyper-Parameter Settings
-**If overfitting happens, 2/3 times epoch (20) may be helpful as an effect of early-stopping**
+**If overfitting happens, increasing warmup step may be helpful**
 ### Low-dimensional dataset (CIFAR-10/SVHN)
 * [x] **[standard]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
 * [x] **[AT]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
