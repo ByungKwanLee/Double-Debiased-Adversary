@@ -210,8 +210,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     else:
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=int(round(args.epochs/15*len(trainloader))),
-        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15*len(trainloader))))
+        step_size_up=int(round(args.epochs/15))*len(trainloader),
+        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
     # training and testing
     for epoch in range(args.epochs):

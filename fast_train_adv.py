@@ -32,8 +32,8 @@ parser.add_argument('--NAME', default='ADV', type=str)
 parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -43,7 +43,7 @@ parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
-parser.add_argument('--epochs', default=15, type=int)
+parser.add_argument('--epochs', default=30, type=int)
 parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
@@ -275,7 +275,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     else:
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=int(round(args.epochs/10*len(trainloader))),
+        step_size_up=int(round(args.epochs/10))*len(trainloader),
         step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/10))*len(trainloader))
 
     # training and testing
