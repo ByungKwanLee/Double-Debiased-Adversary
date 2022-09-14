@@ -29,9 +29,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int) # 12 for vit
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12356", type=str)
 
@@ -273,7 +273,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
     else:
-        # args.epochs = args.epochs if args.dataset !='tiny' else 4
         optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
         step_size_up=int(args.epochs/15*len(trainloader)),
