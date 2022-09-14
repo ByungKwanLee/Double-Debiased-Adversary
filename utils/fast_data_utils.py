@@ -242,7 +242,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
 
     elif 'imagenet-c' in dataset:
 
-        dataset, category, sub_category, degree_number = dataset.split('/')
+        _, category, sub_category, degree_number = dataset.split('/')
 
         # fix size
         orgin_size = 256

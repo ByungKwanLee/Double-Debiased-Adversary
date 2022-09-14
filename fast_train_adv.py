@@ -30,10 +30,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
 parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int) # 12 for vit
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -257,10 +257,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=2/255, steps=args.steps)
     elif args.dataset == 'tiny':
-        rprint('PGD and FGSM MIX training', rank)
-        pgd_attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
-        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
-        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
+        rprint('Fast FGSM training', rank)
+        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps, steps=args.steps)
+        # rprint('PGD and FGSM MIX training', rank)
+        # pgd_attack = attack_loader(net=net, attack='pgd', eps=4/255, steps=args.steps)
+        # fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=4/255, steps=args.steps)
+        # attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

@@ -2,7 +2,6 @@ import torch
 from models.vgg import vgg
 from models.resnet import resnet
 from models.wide import wide_resnet
-from models.densenet import densenet
 from models.vision_transformer import vit
 from models.distill_transformer import deit
 from models.swin_transformer import swin
@@ -30,14 +29,15 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
     else:
         raise NotImplementedError
 
+    # CNN
     if network == 'vgg':
         model = vgg(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'resnet':
         model = resnet(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'wide':
         model = wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
-    elif network == 'dense':
-        model = densenet(depth=depth, dataset=dataset, mean=mean, std=std)
+
+    # Transformer
     elif network == 'vit':
         model = vit(depth=depth, vit_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
                     pretrained=pretrain, mean=mean, std=std)
