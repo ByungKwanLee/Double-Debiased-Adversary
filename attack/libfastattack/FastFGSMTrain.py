@@ -10,7 +10,7 @@ class FastFGSMTrain(Attack):
         self.eps = eps
         self._supported_mode = ['default', 'targeted']
         self.scaler = GradScaler()
-        self.alpha = 2.5
+        self.alpha = 1.25
 
     def forward(self, images, labels):
 

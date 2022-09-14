@@ -29,9 +29,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int) # 12 for vit
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12356", type=str)
 
@@ -43,7 +43,7 @@ parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
-parser.add_argument('--epochs', default=30, type=int)
+parser.add_argument('--epochs', default=15, type=int)
 parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)

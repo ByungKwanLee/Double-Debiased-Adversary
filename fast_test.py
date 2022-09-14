@@ -21,14 +21,14 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--adv', default=False, type=bool)
+parser.add_argument('--adv', default=True, type=bool)
 parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int)
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=4, type=int, help='4/16/32')
-parser.add_argument('--gpu', default='1', type=str)
+parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
 
 # attack parameters
