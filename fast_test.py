@@ -91,8 +91,8 @@ def adv_test():
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
     for attack_name in ['pgd']:
         args.attack = attack_name
-        if args.dataset == 'imagenet' or args.dataset == 'tiny':
-            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255 if args.dataset == 'imagenet' else 4/255, steps=args.steps)
+        if args.dataset == 'imagenet':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255, steps=args.steps)
         else:
             attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
@@ -178,9 +178,9 @@ def measure_adversarial_drift():
     attack_module = {}
     for attack_name in ['pgd']:
         args.attack = attack_name
-        if args.dataset == 'imagenet' or args.dataset == 'tiny':
+        if args.dataset == 'imagenet':
             attack_module[attack_name] = attack_loader(net=net, attack=args.attack,
-                                                       eps=2 / 255 if args.dataset == 'imagenet' else 4 / 255,
+                                                       eps=2 / 255,
                                                        steps=args.steps)
         else:
             attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
