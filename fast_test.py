@@ -22,13 +22,13 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--adv', default=True, type=bool)
-parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=50, type=int)
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
-parser.add_argument('--patch_size', default=4, type=int, help='4/16/32')
-parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--patch_size', default=5, type=int, help='4/16/32')
+parser.add_argument('--gpu', default='4', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
 
 # attack parameters
@@ -40,6 +40,7 @@ args = parser.parse_args()
 
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+torch.cuda.set_device('cuda:'+args.gpu)
 
 if args.network in transformer_list:
     upsample = True
@@ -74,6 +75,7 @@ elif args.network == 'swin':
                                                                                             args.network, args.tran_type,
                                                                                             args.patch_size, args.img_resize)
 else:
+    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, adv_type, args.network, args.depth)
     net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, adv_type, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
