@@ -281,7 +281,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
             if args.network in transformer_list:
                 res = 224
             else:
-                res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+                res = get_resolution(epoch=epoch, min_res=160, max_res=192,
+                                     start_ramp=int(math.floor(args.epochs * 0.5)),
+                                     end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)

@@ -2,7 +2,6 @@
 from __future__ import print_function
 
 # Built-in module
-import math
 import argparse
 import warnings
 warnings.filterwarnings(action='ignore')
@@ -31,11 +30,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int, help='cait depth = 24')
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
@@ -222,8 +221,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                 res = 224
             else:
                 res = get_resolution(epoch=epoch, min_res=160, max_res=192,
-                                     start_ramp=int(math.floor(args.epochs * 0.6)),
-                                     end_ramp=int(math.floor(args.epochs * 0.8)))
+                                     start_ramp=int(math.floor(args.epochs * 0.5)),
+                                     end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler)
         test(net, testloader, lr_scheduler, rank)

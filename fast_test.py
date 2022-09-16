@@ -43,15 +43,13 @@ args = parser.parse_args()
 
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-torch.cuda.set_device('cuda:'+args.gpu)
+torch.cuda.set_device(f'cuda:{args.gpu}')
 
-if args.network in transformer_list:
-    upsample = True
-else:
-    upsample = False
+# upsampling for transformer
+upsample = True if args.network in transformer_list else False
 
 # init dataloader
-_, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False, shuffle=True, upsample=upsample)
+_, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1, test_batch_size=args.batch_size, dist=False, upsample=upsample)
 
 # init model
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
@@ -59,13 +57,8 @@ net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, 
 
 net = net.cuda()
 
-if args.base == 'standard':
-    args.base = ''
-else:
-    args.base = '_' + args.base
-
-
-assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
+# checkpoint base name
+args.base = '' if args.base == 'standard' else '_' + args.base
 
 if args.network in ['vit', 'deit']:
     net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset, args.base,
@@ -183,9 +176,9 @@ def measure_adversarial_drift():
     for attack_name in ['pgd']:
         args.attack = attack_name
         if args.dataset == 'imagenet':
-            attack_module[attack_name] = attack_loader(net=net, attack=args.attack,
-                                                       eps=2 / 255,
-                                                       steps=args.steps)
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/4, steps=args.steps)
+        elif args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/2, steps=args.steps)
         else:
             attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
