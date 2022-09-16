@@ -24,15 +24,15 @@ on Volta GPU architecture.
 
 ## Hyper-Parameter Settings
 **If overfitting happens, increasing warmup step may be helpful**
-### Low-dimensional dataset (CIFAR-10/SVHN)
+### Low-dimensional dataset (CIFAR-10/SVHN: 8/255)
 * [x] **[standard]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
 * [x] **[AT]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
 ---
-### Mid-dimensional dataset (Tiny-ImageNet)
+### Mid-dimensional dataset (Tiny-ImageNet: 4/255)
 * [x] **[standard]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
 * [x] **[AT]**  batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
 ---
-### High-dimensional dataset (ImageNet)
+### High-dimensional dataset (ImageNet: 2/255)
 * [x] **[standard]** batch (128), learning rate (0.5), epoch (30)
 * [x] **[AT]**  batch (128), learning rate (0.5), epoch (30), weight decay (5e-4)
 

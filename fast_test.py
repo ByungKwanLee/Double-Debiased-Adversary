@@ -25,11 +25,14 @@ parser.add_argument('--adv', default=True, type=bool)
 parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=50, type=int)
+parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--gpu', default='4', type=str)
+
+# transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=5, type=int, help='4/16/32')
-parser.add_argument('--gpu', default='4', type=str)
-parser.add_argument('--batch_size', default=128, type=float)
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -56,27 +59,24 @@ net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, 
 
 net = net.cuda()
 
-# Load Plain Network
-print('==> Loading Plain checkpoint..')
+if args.base == 'standard':
+    args.base = ''
+else:
+    args.base = '_' + args.base
+
+
 assert os.path.isdir('checkpoint/pretrain'), 'Error: no checkpoint directory found!'
 
-# Loading checkpoint
-if args.adv:
-    adv_type = '_adv'
-else:
-    adv_type = ''
-
 if args.network in ['vit', 'deit']:
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset, adv_type,
+    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset, args.base,
                                                                                     args.network, args.tran_type,
                                                                                     args.patch_size, args.img_resize)
 elif args.network == 'swin':
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset, adv_type,
+    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset, args.base,
                                                                                             args.network, args.tran_type,
                                                                                             args.patch_size, args.img_resize)
 else:
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, adv_type, args.network, args.depth)
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, adv_type, args.network, args.depth)
+    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, args.base, args.network, args.depth)
 
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
 
