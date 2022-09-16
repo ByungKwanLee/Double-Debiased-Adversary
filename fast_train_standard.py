@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 # Built-in module
+import math
 import argparse
 import warnings
 warnings.filterwarnings(action='ignore')
@@ -30,9 +31,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
-parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int, help='cait depth = 24')
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int, help='cait depth = 24')
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12356", type=str)
 
@@ -48,7 +49,7 @@ parser.add_argument('--epochs', default=30, type=int)
 parser.add_argument('--learning_rate', default=0.5, type=float) #1e-4 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=256, type=float)
+parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--pretrain', default=True, type=bool)
 
 args = parser.parse_args()
@@ -220,7 +221,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
             if args.network in transformer_list:
                 res = 224
             else:
-                res = get_resolution(epoch=epoch, min_res=160, max_res=192, end_ramp=25, start_ramp=18)
+                res = get_resolution(epoch=epoch, min_res=160, max_res=192,
+                                     start_ramp=int(math.floor(args.epochs * 0.6)),
+                                     end_ramp=int(math.floor(args.epochs * 0.8)))
             decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler)
         test(net, testloader, lr_scheduler, rank)

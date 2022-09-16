@@ -21,10 +21,9 @@ class VGG(nn.Module):
         super().__init__()
         self.features = features
 
-        pooling_size = 1 if num_classes != 1000 else 7
-        self.avgpool = nn.AdaptiveAvgPool2d((pooling_size, pooling_size))
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(
-            nn.Linear(512 * pooling_size**2, num_classes),
+            nn.Linear(512, num_classes),
         )
 
         # configuration

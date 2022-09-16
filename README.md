@@ -87,7 +87,8 @@ I use python version 3.9, pytorch, torchvision, and cuda 11.3. For more differen
 - [ ] To guarantee the execution of this code, please additionally install library in requirements.txt (matplotlib, tqdm)
 
 > pip install -r requirements.txt
-
+- [ ] To biased GPU allocation problem, download ffcv 1.0.0 or 0.4.0 version and copy and paste all files in ffcv folder of the downloaded to the path
+> paste on this path: /home/$username/anaconda3/envs/$env_name(ex:ffcv)/lib/$python_version/site-packages/ffcv
 ---
 
 ## Available Datasets
