@@ -27,7 +27,7 @@ parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=50, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='4', type=str)
+parser.add_argument('--gpu', default='1', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
@@ -40,6 +40,9 @@ parser.add_argument('--eps', default=8/255, type=float)
 parser.add_argument('--steps', default=10, type=int)
 
 args = parser.parse_args()
+
+# print configuration
+print_configuration(args, 0)
 
 # GPU configurations
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -54,12 +57,12 @@ _, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1,
 # init model
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                   img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
-
 net = net.cuda()
 
 # checkpoint base name
 args.base = '' if args.base == 'standard' else '_' + args.base
 
+# setting checkpoint name
 if args.network in ['vit', 'deit']:
     net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset, args.base,
                                                                                     args.network, args.tran_type,
@@ -71,8 +74,8 @@ elif args.network == 'swin':
 else:
     net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, args.base, args.network, args.depth)
 
+# load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
-
 print(" [*] Loaded network params : %s" %(net_checkpoint_name.split('/')[-1]))
 checkpoint_module(net_checkpoint, net)
 
