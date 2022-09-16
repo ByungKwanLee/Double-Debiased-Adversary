@@ -94,7 +94,9 @@ def adv_test():
     for attack_name in ['pgd']:
         args.attack = attack_name
         if args.dataset == 'imagenet':
-            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=2/255, steps=args.steps)
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/4, steps=args.steps)
+        elif args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/2, steps=args.steps)
         else:
             attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
