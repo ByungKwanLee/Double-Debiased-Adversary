@@ -265,7 +265,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
 
     # training and testing
-    for epoch in range(args.epoch):
+    for epoch in range(args.epochs):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)

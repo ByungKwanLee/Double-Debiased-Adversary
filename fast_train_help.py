@@ -290,7 +290,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     step_size_up=args.epoch * len(trainloader)/2, step_size_down=args.epoch * len(trainloader)/2)
 
     # training and testing
-    for epoch in range(args.epoch):
+    for epoch in range(args.epochs):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp)
         test(net, testloader, attack, rank)
