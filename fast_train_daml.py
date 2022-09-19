@@ -123,8 +123,8 @@ def train(net, netG, trainloader, optimizerF, optimizerG, lr_scheduler, scalerF,
         train_lossG += lossG.item()
 
         _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        total += targets1.size(0)
+        correct += predicted.eq(targets1).sum().item()
 
         desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
