@@ -30,10 +30,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int) # 12 for vit
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int) # 12 for vit
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12357", type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -41,6 +41,7 @@ parser.add_argument('--img_resize', default=224, type=int, help='default/224/384
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
+parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
@@ -48,7 +49,7 @@ parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
-parser.add_argument('--pretrain', default=False, type=bool)
+
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -263,13 +264,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
+
+    # init optimizer and lr scheduler
+    optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+
     # init optimizer and lr scheduler
     if args.network in transformer_list:
-        t_total = args.num_steps
-        optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
+        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
     else:
-        optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
         step_size_up=int(round(args.epochs/15))*len(trainloader),
         step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
