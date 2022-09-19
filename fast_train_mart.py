@@ -84,12 +84,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
             adv_outputs = net(adv_inputs)
             loss = mart_loss(outputs, adv_outputs, targets)
 
-        # GradAlign for Fast FGSM to reduce catastrophic overfitting: NeurIPS 2020 (https://arxiv.org/abs/2007.02617)
-        if args.dataset == 'imagenet':
-            loss += GradAlign(net, inputs, targets, args.eps/4)
-        elif args.dataset == 'tiny':
-            loss += GradAlign(net, inputs, targets, args.eps/2)
-
         # Accerlating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)

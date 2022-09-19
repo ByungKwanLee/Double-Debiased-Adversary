@@ -350,32 +350,4 @@ class AdvWeightPerturb(object):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
 
 
-from torch.cuda.amp import GradScaler, autocast
-scaler = GradScaler()
-
-
-def get_input_grad(model, input, target, eps, delta_init='none', backprop=False):
-    if delta_init == 'none':
-        delta = torch.zeros_like(input, requires_grad=True)
-    elif delta_init == 'random_uniform':
-        delta = torch.zeros(input.shape).uniform(-eps, eps).cuda()
-        delta.requires_grad = True
-    with autocast():
-        output = model(input + delta)
-        loss = F.cross_entropy(output, target)
-    scaled_loss = scaler.scale(loss)
-    grad = torch.autograd.grad(scaled_loss, delta, create_graph=True if backprop else False)[0]
-    grad /= scaled_loss / loss
-    if not backprop:
-        grad, delta = grad.detach(), delta.detach()
-    return grad
-
-def GradAlign(model, input, target, eps):
-    grad1 = get_input_grad(model, input, target, eps, delta_init='none', backprop=False)
-    grad2 = get_input_grad(model, input, target, eps, delta_init='random_uniform', backprop=True)
-    grad1, grad2 = grad1.reshape(len(grad1), -1), grad2.reshape(len(grad2), -1)
-    cos = torch.nn.functional.cosine_similarity(grad1, grad2, dim=1)
-    return 0.2 * (1.0 - cos.mean())
-
-
 
