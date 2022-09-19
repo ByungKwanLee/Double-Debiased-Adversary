@@ -22,12 +22,12 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--adv', default=True, type=bool)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int)
+parser.add_argument('--dataset', default='svhn', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=50, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--gpu', default='6', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')

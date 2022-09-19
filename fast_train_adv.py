@@ -30,9 +30,9 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int) # 12 for vit
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int) # 12 for vit
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
@@ -91,7 +91,13 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
 
-        # Accelerating backward propagation
+        # GradAlign for Fast FGSM to reduce catastrophic overfitting: NeurIPS 2020 (https://arxiv.org/abs/2007.02617)
+        if args.dataset == 'imagenet':
+            loss += GradAlign(net, inputs, targets, args.eps/4)
+        elif args.dataset == 'tiny':
+            loss += GradAlign(net, inputs, targets, args.eps/2)
+
+        # Accelerating backward propagation.
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()

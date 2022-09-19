@@ -91,6 +91,12 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             hat_target = std(adv_inputs).max(1)[1]
             loss = trades_loss(outputs, adv_outputs, targets)+0.25*F.cross_entropy(hat_outputs, hat_target)
 
+        # GradAlign for Fast FGSM to reduce catastrophic overfitting: NeurIPS 2020 (https://arxiv.org/abs/2007.02617)
+        if args.dataset == 'imagenet':
+            loss += GradAlign(net, inputs, targets, args.eps/4)
+        elif args.dataset == 'tiny':
+            loss += GradAlign(net, inputs, targets, args.eps/2)
+
         # Accerlating backward propagation
         scaler.scale(loss).backward()
         scaler.step(optimizer)
