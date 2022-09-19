@@ -92,15 +92,25 @@ def train(net, netG, trainloader, optimizerF, optimizerG, lr_scheduler, scalerF,
         inputs = attack(inputs, targets)
 
         # sample splitting
+<<<<<<< HEAD
         inputs1, inputs2 = inputs.split(args.batch_size // 2)
         targets1, targets2 = targets.split(args.batch_size // 2)
+=======
+        inputs1, inputs2 = inputs.split(args.batch_size//2)
+        targets1, targets2 = targets.split(args.batch_size//2)
+>>>>>>> 735b1a1201b8ec81030fcda4ba14b5fdaf6ee903
 
         # Accelerating forward propagation
         optimizerF.zero_grad()
 
         with autocast():
+<<<<<<< HEAD
             outputsF = net(inputs1)
             lossF = F.cross_entropy(outputsF, targets1)
+=======
+            outputs = net(inputs1)
+            loss = F.cross_entropy(outputs, targets1)
+>>>>>>> 735b1a1201b8ec81030fcda4ba14b5fdaf6ee903
 
         # Accelerating backward propagation
         scalerF.scale(lossF).backward()
