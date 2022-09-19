@@ -92,9 +92,8 @@ def train(net, netG, trainloader, optimizerF, optimizerG, lr_scheduler, scalerF,
         inputs = attack(inputs, targets)
 
         # sample splitting
-        inputs1, inputs2 = inputs.split(args.batch_size // 2)
-        targets1, targets2 = targets.split(args.batch_size // 2)
-
+        inputs1, inputs2 = inputs.split(args.batch_size//2)
+        targets1, targets2 = targets.split(args.batch_size//2)
 
         # Accelerating forward propagation
         optimizerF.zero_grad()
