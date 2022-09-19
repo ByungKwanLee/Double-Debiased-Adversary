@@ -145,7 +145,6 @@ class ResnetBlock(nn.Module):
         return out
 
 def daml_gen(dataset='imagenet', mean=None, std=None):
-
     if dataset == 'cifar10' or dataset == 'svhn':
         ngf = 64
     elif dataset == 'cifar100':
