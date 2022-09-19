@@ -85,11 +85,15 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         inputs, targets = inputs.cuda(), targets.cuda()
         inputs = attack(inputs, targets)
 
+        # sample splitting
+        inputs1, inputs2 = inputs.split(args.batch_size//2)
+        targets1, targets2 = targets.split(args.batch_size//2)
+
         # Accelerating forward propagation
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets)
+            outputs = net(inputs1)
+            loss = F.cross_entropy(outputs, targets1)
 
         # Accelerating backward propagation
         scaler.scale(loss).backward()
@@ -101,8 +105,8 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
 
         train_loss += loss.item()
         _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        total += targets1.size(0)
+        correct += predicted.eq(targets1).sum().item()
 
         desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
