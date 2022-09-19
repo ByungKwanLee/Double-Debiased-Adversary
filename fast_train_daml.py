@@ -72,11 +72,13 @@ os.environ['MASTER_PORT'] = args.port
 best_acc = 0
 
 # Mix Training
-scaler = GradScaler()
+scalerF = GradScaler()
+scalerG = GradScaler()
 
-def train(net, trainloader, optimizer, optimizerG, lr_scheduler, scaler, attack):
+def train(net, netG, trainloader, optimizerF, optimizerG, lr_scheduler, scalerF, scalerG, attack):
     net.train()
-    train_loss = 0
+    netG.train()
+    train_lossF, train_lossG = 0, 0
     correct = 0
     total = 0
 
@@ -84,6 +86,7 @@ def train(net, trainloader, optimizer, optimizerG, lr_scheduler, scaler, attack)
             (lr_scheduler.get_lr()[0], 0, 0, correct, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
+
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
         inputs = attack(inputs, targets)
@@ -93,20 +96,33 @@ def train(net, trainloader, optimizer, optimizerG, lr_scheduler, scaler, attack)
         targets1, targets2 = targets.split(args.batch_size//2)
 
         # Accelerating forward propagation
-        optimizer.zero_grad()
+        optimizerF.zero_grad()
+
         with autocast():
-            outputs = net(inputs1)
-            loss = F.cross_entropy(outputs, targets1)
+            outputsF = net(inputs1)
+            lossF = F.cross_entropy(outputsF, targets1)
+
 
         # Accelerating backward propagation
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        scalerF.scale(lossF).backward()
+        scalerF.step(optimizerF)
+        scalerF.update()
+
+        optimizerG.zero_grad()
+        with autocast():
+            outputsG = netG(inputs1)
+            lossG = F.cross_entropy(outputsG, targets1)
+
+        scalerG.scale(lossG).backward()
+        scalerG.step(optimizerG)
+        scalerG.update()
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
 
-        train_loss += loss.item()
+        train_lossF += lossF.item()
+        train_lossG += lossG.item()
+
         _, predicted = outputs.max(1)
         total += targets1.size(0)
         correct += predicted.eq(targets1).sum().item()
@@ -115,9 +131,10 @@ def train(net, trainloader, optimizer, optimizerG, lr_scheduler, scaler, attack)
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
         prog_bar.set_description(desc, refresh=True)
 
-def test(net, testloader, attack, rank):
+def test(net, netG, testloader, attack, rank):
     global best_acc
     net.eval()
+    netG.eval()
     test_loss = 0
     correct = 0
     total = 0
@@ -275,11 +292,11 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     if args.network in transformer_list:
         t_total = args.num_steps
-        optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
+        optimizerF = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        lr_schedulerF = WarmupCosineSchedule(optimizerF, warmup_steps=args.warmup_steps, t_total=t_total)
     else:
-        optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-        lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+        optimizerF = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        lr_schedulerF = torch.optim.lr_scheduler.CyclicLR(optimizerF, base_lr=0, max_lr=args.learning_rate,
         step_size_up=int(round(args.epochs/15))*len(trainloader),
         step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
@@ -296,8 +313,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, trainloader, optimizer, optimizerG, lr_scheduler, scaler, attack)
-        test(net, testloader, attack, rank)
+        train(net, netG, trainloader, optimizerF, optimizerG, lr_schedulerF, scalerF, scalerG, attack)
+        test(net, netG, testloader, attack, rank)
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
