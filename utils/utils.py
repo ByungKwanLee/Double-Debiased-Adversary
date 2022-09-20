@@ -349,10 +349,6 @@ class AdvWeightPerturb(object):
     def restore(self, diff):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
 
-<<<<<<< HEAD
-
-
-=======
 # Causal Package
 def causal_loss(logits_adv, logits_inv):
     KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
@@ -363,4 +359,3 @@ def normalize_clip(feature, eps):
     scale = eps / torch.abs(feature)
 
     return torch.minimum(torch.ones_like(scale), scale)
->>>>>>> 4c1f75038b5ae0f888c7102b64d8c2c2749475a3
