@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, RandomSampler, DistributedSampler, SequentialSampler
 
 
-def get_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, root='../data'):
+def get_dataloader(dataset, train_batch_size, test_batch_size, num_workers=1, root='../data'):
     img_size = 224
 
     transform_train = transforms.Compose([

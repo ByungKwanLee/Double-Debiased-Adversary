@@ -74,34 +74,37 @@ best_acc = 0
 # Mix Training
 scalerF = GradScaler()
 scalerG = GradScaler()
+scalerD = GradScaler()
 
-def train(net, netG, trainloader, optimizerF, optimizerG, lr_scheduler, scalerF, scalerG, attack):
+def train(net, netG, trainloader, optimizerF, optimizerG, optimizerD, lr_schedulerD, lr_schedulerF, lr_schedulerG, scalerF, scalerG, scalerD, attack):
     net.train()
     netG.train()
-    train_lossF, train_lossG = 0, 0
-    correct = 0
+    train_lossF, train_lossG, train_lossD = 0, 0, 0
+    correctF, correctG = 0, 0
     total = 0
 
-    desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (lr_scheduler.get_lr()[0], 0, 0, correct, total))
+    softmax = torch.nn.Softmax(dim=-1)
+
+    desc = ('[Train/LRF=%.3f/LRG=%.3f] LossF: %.3f | LossG: %.3f | LossD: %.3f | Acc: %.3f%%/%.3f%%  (%d/%d/%d)' %
+            (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], 0, 0, 0, 0, 0, correctF, correctG, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
 
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        inputs = attack(inputs, targets)
+        adv_inputs = attack(inputs, targets)
 
         # sample splitting
         inputs1, inputs2 = inputs.split(args.batch_size//2)
+        adv_inputs1, adv_inputs2 = adv_inputs.split(args.batch_size // 2)
         targets1, targets2 = targets.split(args.batch_size//2)
 
         # Accelerating forward propagation
         optimizerF.zero_grad()
 
         with autocast():
-            outputsF = net(inputs1)
+            outputsF = net(adv_inputs1)
             lossF = F.cross_entropy(outputsF, targets1)
-
 
         # Accelerating backward propagation
         scalerF.scale(lossF).backward()
@@ -110,25 +113,60 @@ def train(net, netG, trainloader, optimizerF, optimizerG, lr_scheduler, scalerF,
 
         optimizerG.zero_grad()
         with autocast():
-            outputsG = netG(inputs1)
-            lossG = F.cross_entropy(outputsG, targets1)
+            outputsG_ = netG(2 * inputs1 - 1)
+            n_outputsG = normalize_clip(outputsG_.clone(), args.eps)
+
+            outputsG_ = outputsG_ * n_outputsG
+            out_img1 = inputs1 + outputsG_
+            out_img1.clamp_(0, 1)
+
+            outputsG = net(out_img1)
+
+            lossG = -1. * F.cross_entropy(outputsG, targets1)
 
         scalerG.scale(lossG).backward()
         scalerG.step(optimizerG)
         scalerG.update()
 
+        optimizerD.zero_grad()
+        with autocast():
+            adv_out = softmax(net(adv_inputs2))
+            outputsG_ = inputs2 + netG(2 * inputs2 - 1)
+            outputsG_.clamp_(0, 1)
+            gen_out = softmax(net(outputsG_))
+            onehot_target2 = get_onehot(adv_out, targets2)
+
+            u = onehot_target2 - softmax(net(inputs2)) - adv_out + gen_out # B X C
+            v = adv_out - gen_out # B X C
+
+            # u_loss = (((u.T @ u) - (u.T @ u).diag().diag()) ** 2).sum()
+            # v_loss = (((v.T @ v) - (u.T @ u).diag().diag()) ** 2).sum()
+
+            mc_loss = (v @ u.T @ u @ v.T).trace() / (args.batch_size / 2)
+
+        scalerD.scale(mc_loss).backward()
+        scalerD.step(optimizerD)
+        scalerD.update()
+
         # scheduling for Cyclic LR
-        lr_scheduler.step()
+        lr_schedulerF.step()
+        lr_schedulerG.step()
+        lr_schedulerD.step()
 
         train_lossF += lossF.item()
         train_lossG += lossG.item()
+        train_lossD += mc_loss.item()
 
-        _, predicted = outputs.max(1)
+        _, predictedF = outputsF.max(1)
+        _, predictedG = outputsG.max(1)
+
         total += targets1.size(0)
-        correct += predicted.eq(targets1).sum().item()
+        correctF += predictedF.eq(targets1).sum().item()
+        correctG += predictedG.eq(targets1).sum().item()
 
-        desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Train/LRF=%.3f/LRG=%.3f] LossF: %.3f | LossG: %.3f | LossD: %.3f | Acc: %.3f%%/%.3f%%  (%d/%d/%d)' %
+                (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], train_lossF / (batch_idx + 1), train_lossG / (batch_idx + 1),
+                 train_lossD / (batch_idx + 1), 100. * correctF / total, 100. * correctG / total, correctF, correctG, total))
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, netG, testloader, attack, rank):
@@ -208,23 +246,23 @@ def test(net, netG, testloader, attack, rank):
         best_acc = acc
         if rank == 0:
             if args.network in transformer_list:
-                torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
+                torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
                                                                                                 args.network, args.tran_type,
                                                                                                 args.patch_size, args.img_resize))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
+                print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
                                                                                             args.network, args.tran_type,
                                                                                             args.patch_size, args.img_resize))
             elif args.network == 'swin':
-                torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
+                torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
                                                                                                         args.network, args.tran_type,
                                                                                                         args.patch_size, args.img_resize))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
+                print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
                                                                                                     args.network, args.tran_type,
                                                                                                     args.patch_size, args.img_resize))
             else:
-                torch.save(state, './checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+                torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                     args.network, args.depth))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset,
+                print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset,
                                                                                 args.network, args.depth))
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -300,7 +338,21 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         step_size_up=int(round(args.epochs/15))*len(trainloader),
         step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
-    optimizerG = optim.Adam(netG.parameters(), lr=args.G_learning_rate, betas=(args.beta1, 0.999))
+    optimizerG = optim.SGD(netG.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_schedulerG = torch.optim.lr_scheduler.CyclicLR(optimizerG, base_lr=0, max_lr=args.learning_rate,
+                                                      step_size_up=int(round(args.epochs / 15)) * len(trainloader),
+                                                      step_size_down=args.epochs * len(trainloader) - int(
+                                                          round(args.epochs / 15)) * len(trainloader))
+
+    params = list(net.parameters()) + list(netG.parameters())
+    optimizerD = optim.SGD(params, lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_schedulerD = torch.optim.lr_scheduler.CyclicLR(optimizerD, base_lr=0, max_lr=args.learning_rate,
+                                                      step_size_up=int(round(args.epochs / 15)) * len(trainloader),
+                                                      step_size_down=args.epochs * len(trainloader) - int(
+                                                          round(args.epochs / 15)) * len(trainloader))
+
+    # optimizerG = optim.Adam(netG.parameters(), lr=args.G_learning_rate, betas=(args.beta1, 0.999))
+    # lr_schedulerG = torch.optim.lr_scheduler.MultiStepLR(optimizerG, milestones=[10, 20, 30], gamma=0.5)
 
     # training and testing
     for epoch in range(args.epochs):
@@ -313,7 +365,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, netG, trainloader, optimizerF, optimizerG, lr_schedulerF, scalerF, scalerG, attack)
+        train(net, netG, trainloader, optimizerF, optimizerG, optimizerD, lr_schedulerF, lr_schedulerG, lr_schedulerD, scalerF, scalerG, scalerD, attack)
         test(net, netG, testloader, attack, rank)
 
 def run():
