@@ -129,7 +129,6 @@ def KLDivergence(q, p):
     kld = q * (q / p).log()
     return kld.sum(dim=1)
 
-
 # imagenet-c dataset loadername
 import torchvision
 # blur
