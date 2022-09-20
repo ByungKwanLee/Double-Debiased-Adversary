@@ -33,7 +33,7 @@ parser.add_argument('--NAME', default='STANDARD', type=str)
 parser.add_argument('--dataset', default='imagenet', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int, help='cait depth = 24')
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter

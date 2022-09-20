@@ -44,7 +44,7 @@ def get_scheduler(optimizer, args):
 
 class ResnetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf, norm_type, act_type='selu', use_dropout=False, n_blocks=6,
-                 padding_type='reflect', mean=None, std=None):
+                 padding_type='reflect', mean=None, std=None, img_size=None):
         assert (n_blocks >= 0)
         super(ResnetGenerator, self).__init__()
 
@@ -54,6 +54,7 @@ class ResnetGenerator(nn.Module):
         self.ngf = ngf
         self.mean = mean.view(1, -1, 1, 1)
         self.std = std.view(1, -1, 1, 1)
+        self.img_size = img_size
 
         use_bias = norm_type == 'instance'
 
@@ -67,8 +68,12 @@ class ResnetGenerator(nn.Module):
         else:
             self.act = nn.ReLU(True)
 
-        model0 = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
-                  norm_layer(ngf), self.act]
+        if self.img_size == 224:
+            model0 = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
+                      norm_layer(ngf), self.act]
+        else:
+            model0 = [nn.ReflectionPad2d(1), nn.Conv2d(input_nc, ngf, kernel_size=3, padding=0, bias=use_bias),
+                      norm_layer(ngf), self.act]
 
         n_downsampling = 2
         for i in range(n_downsampling):
@@ -90,14 +95,18 @@ class ResnetGenerator(nn.Module):
                                           bias=use_bias),
                        norm_layer(int(ngf * mult / 2)),
                        self.act]
-        model0 += [nn.ReflectionPad2d(3)]
-        model0 += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
+
+        if self.img_size == 224:
+            model0 += [nn.ReflectionPad2d(3)]
+            model0 += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
+        else:
+            model0 += [nn.ReflectionPad2d(1)]
+            model0 += [nn.Conv2d(ngf, output_nc, kernel_size=3, padding=0)]
         model0 += [nn.Tanh()]
 
         self.model0 = nn.Sequential(*model0)
 
     def forward(self, x):
-        x = (x - self.mean) / self.std
         x = self.model0(x)
 
         return x
@@ -144,7 +153,7 @@ class ResnetBlock(nn.Module):
         out = x + self.conv_block(x)
         return out
 
-def daml_gen(dataset='imagenet', mean=None, std=None):
+def daml_gen(dataset='imagenet', img_size=None, mean=None, std=None):
     if dataset == 'cifar10' or dataset == 'svhn':
         ngf = 64
     elif dataset == 'cifar100':
@@ -156,5 +165,5 @@ def daml_gen(dataset='imagenet', mean=None, std=None):
     else:
         raise NotImplementedError
 
-    return ResnetGenerator(3, 3, ngf, norm_type='batch', act_type='relu', mean=mean, std=std)
+    return ResnetGenerator(3, 3, ngf, norm_type='batch', act_type='relu', mean=mean, std=std, img_size=img_size)
 
