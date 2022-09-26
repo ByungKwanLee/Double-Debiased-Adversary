@@ -13,6 +13,7 @@ from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
 from utils.scheduler import WarmupCosineSchedule
 from models.generator import weights_init
+from tensorboardX import SummaryWriter
 
 # attack loader
 # from attack.attack import attack_loader
@@ -34,7 +35,7 @@ parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -49,7 +50,7 @@ parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--G_learning_rate', default=0.002, type=float) #for generator
 parser.add_argument('--beta1', default=0.5, type=float) #for generator
 parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=64, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
@@ -76,7 +77,16 @@ scalerF = GradScaler()
 scalerG = GradScaler()
 scalerD = GradScaler()
 
-def train(net, netG, trainloader, optimizerF, optimizerG, optimizerD, lr_schedulerD, lr_schedulerF, lr_schedulerG, scalerF, scalerG, scalerD, attack):
+counter = 0
+log_dir = './logs'
+check_dir(log_dir)
+
+def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer):
+    global counter
+    optimizerF, optimizerG, optimizerD = optimizer
+    lr_schedulerD, lr_schedulerF, lr_schedulerG = lr_scheduler
+    scalerF, scalerG, scalerD = scaler
+
     net.train()
     netG.train()
     train_lossF, train_lossG, train_lossD = 0, 0, 0
@@ -152,6 +162,12 @@ def train(net, netG, trainloader, optimizerF, optimizerG, optimizerD, lr_schedul
         lr_schedulerF.step()
         lr_schedulerG.step()
         lr_schedulerD.step()
+
+        if rank == 0:
+            writer.add_scalar('Train_Loss/lossF', lossF, counter)
+            writer.add_scalar('Train_Loss/lossG', lossG, counter)
+            writer.add_scalar('Train_Loss/mc_loss', mc_loss, counter)
+            counter += 1
 
         train_lossF += lossF.item()
         train_lossG += lossG.item()
@@ -354,7 +370,13 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # optimizerG = optim.Adam(netG.parameters(), lr=args.G_learning_rate, betas=(args.beta1, 0.999))
     # lr_schedulerG = torch.optim.lr_scheduler.MultiStepLR(optimizerG, milestones=[10, 20, 30], gamma=0.5)
 
+    writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
     # training and testing
+
+    optimizer = [optimizerF, optimizerG, optimizerD]
+    lr_scheduler = [lr_schedulerF, lr_schedulerG, lr_schedulerD]
+    scaler = [scalerF, scalerG, scalerD]
+
     for epoch in range(args.epochs):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
@@ -365,7 +387,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, netG, trainloader, optimizerF, optimizerG, optimizerD, lr_schedulerF, lr_schedulerG, lr_schedulerD, scalerF, scalerG, scalerD, attack)
+        train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer)
         test(net, netG, testloader, attack, rank)
 
 def run():

@@ -311,7 +311,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
             loaders[name] = Loader(paths[name], batch_size=train_batch_size if name == 'train' else test_batch_size,
                                 num_workers=num_workers, order=order, drop_last=(name == 'train'), os_cache=True,
                                    distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
-                                   seed = 0)
+                                   seed=0)
 
 
     return loaders['train'], loaders['test'], decoder

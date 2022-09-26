@@ -16,8 +16,10 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
         mean = torch.tensor([0.4914, 0.4822, 0.4465]).cuda()
         std = torch.tensor([0.2023, 0.1994, 0.2010]).cuda()
     elif dataset == 'svhn': # later, it should be updated
-        mean = torch.tensor([0.43090966, 0.4302428, 0.44634357]).cuda()
-        std = torch.tensor([0.19759192, 0.20029082, 0.19811132]).cuda()
+        # mean = torch.tensor([0.43090966, 0.4302428, 0.44634357]).cuda()
+        # std = torch.tensor([0.19759192, 0.20029082, 0.19811132]).cuda()
+        mean = torch.tensor([0.4377, 0.4438, 0.4728]).cuda()
+        std = torch.tensor([0.1980, 0.2010, 0.1970]).cuda()
     elif dataset == 'cifar100':
         mean = torch.tensor([0.5071, 0.4867, 0.4408]).cuda()
         std = torch.tensor([0.2675, 0.2565, 0.2761]).cuda()
