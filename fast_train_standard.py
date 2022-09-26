@@ -31,8 +31,8 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=50, type=int, help='cait depth = 24')
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int, help='cait depth = 24')
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12356", type=str)
 

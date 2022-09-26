@@ -123,7 +123,7 @@ def save_data_for_beton(dataset, root='../data'):
             writer.from_indexed_dataset(ds)
 
 
-def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=0, dist=True, shuffle=False, upsample=False):
+def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True, shuffle=False, upsample=False):
 
     gpu = f'cuda:{torch.cuda.current_device()}'
     decoder = None

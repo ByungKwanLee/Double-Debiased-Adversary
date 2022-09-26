@@ -25,9 +25,9 @@ parser.add_argument('--adv', default=True, type=bool)
 parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int)
-parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--base', default='standard', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='4', type=str)
+parser.add_argument('--gpu', default='6', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
@@ -116,9 +116,9 @@ def adv_test():
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
-            # if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
-            #     if batch_idx >= int(len(testloader) * 0.3):
-            #         break
+            if args.dataset == 'imagenet':
+                if batch_idx >= int(len(testloader) * 0.2):
+                    break
 
 def clean_test():
     net.eval()
@@ -216,9 +216,8 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    # set_random(777)
     clean_test()
-    adv_test()
+    if args.base != 'standard': adv_test()
     #measure_adversarial_drift()
 
 
