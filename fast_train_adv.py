@@ -45,7 +45,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=300, type=int)
-parser.add_argument('--learning_rate', default=3e-2, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.3, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
