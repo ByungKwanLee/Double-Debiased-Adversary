@@ -33,7 +33,7 @@ parser.add_argument('--NAME', default='ADV', type=str)
 parser.add_argument('--dataset', default='svhn', type=str)
 parser.add_argument('--network', default='vit', type=str)
 parser.add_argument('--depth', default=12, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
