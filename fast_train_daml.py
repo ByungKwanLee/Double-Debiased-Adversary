@@ -34,23 +34,23 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 parser.add_argument('--img_resize', default=32, type=int, help='32/224')
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
-parser.add_argument('--epochs', default=100, type=int)
+parser.add_argument('--epochs', default=60, type=int)
 parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--G_learning_rate', default=0.002, type=float) #for generator
 parser.add_argument('--beta1', default=0.5, type=float) #for generator
 parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--batch_size', default=64, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
@@ -95,8 +95,8 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
 
     softmax = torch.nn.Softmax(dim=-1)
 
-    desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccFG: %.3f%%/%.3f%%  (%d/%d/%d/%d)' %
-            (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], 0, 0, 0, 0, 0, correct, correctF, correctG, total))
+    desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccFG: %.2f%%/%.2f%%/%.2f%%  (%d/%d/%d/%d)' %
+            (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], 0, 0, 0, 0, 0, 0, correct, correctF, correctG, total))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
 
@@ -132,7 +132,9 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
 
             outputsG = net(out_img1)
 
-            lossG = -1. * F.cross_entropy(outputsG, targets1)
+            lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
+
+            #lossG = -1. * F.cross_entropy(outputsG, targets1)
 
         scalerG.scale(lossG).backward()
         scalerG.step(optimizerG)
@@ -152,14 +154,16 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
             u = onehot_target2 - clean_out - adv_out + gen_out # B X C
             v_f = adv_out - gen_out # B X C
 
-            v = outputsG_.reshape(int(args.batch_size / 2), -1)
+            # norm_u = (u - torch.min(u, -1)[0].unsqueeze(-1)) / (torch.max(u, -1)[0].unsqueeze(-1) - torch.min(u, -1)[0].unsqueeze(-1))
 
-            u_loss = (((u.T @ u) - (u.T @ u)).diag().diag() ** 2).sum()
-            v_loss = (((v.T @ v) - (v.T @ v)).diag().diag() ** 2).sum()
+            v = (adv_inputs2 - outputsG_).reshape(int(args.batch_size / 2), -1) # B X HWC
+
+            u_loss = (((u.T @ u) - (u.T @ u).diag().diag()) ** 2).mean()
+            v_loss = (((v.T @ v) - (v.T @ v).diag().diag()) ** 2).mean()
 
             mc_loss = (v_f @ u.T @ u @ v_f.T).trace() / (args.batch_size / 2)
 
-            lossD = mc_loss + u_loss + v_loss
+            lossD = mc_loss + u_loss + 0.01 * v_loss
 
         scalerD.scale(lossD).backward()
         scalerD.step(optimizerD)
@@ -176,7 +180,7 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
             writer.add_scalar('Train_Loss/lossD', lossD, counter)
             writer.add_scalar('Train_Loss/mc_loss', mc_loss, counter)
             writer.add_scalar('Train_Loss/u_loss', u_loss, counter)
-            writer.add_scalar('Train_Loss/v_loss', v_loss, counter)
+            writer.add_scalar('Train_Loss/v_loss', 0.01 * v_loss, counter)
 
             writer.add_scalar('lr/f_lr', lr_schedulerF.get_last_lr()[0], counter)
             writer.add_scalar('lr/g_lr', lr_schedulerG.get_last_lr()[0], counter)
@@ -196,9 +200,9 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
         correctG += predictedG.eq(targets1).sum().item()
         correct += predictedG.eq(predictedF).sum().item()
 
-        desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccF/G: %.3f%%/%.3f%%  (%d/%d/%d/%d)' %
+        desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccF/G: %.2f%%/%.2f%%/%.2f%%  (%d/%d/%d/%d)' %
                 (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], train_lossF / (batch_idx + 1), train_lossG / (batch_idx + 1),
-                 train_lossD / (batch_idx + 1), 100. * correctF / total, 100. * correctG / total, correct, correctF, correctG, total))
+                 train_lossD / (batch_idx + 1), 100. * correctF / total, 100. * correctG / total, 100. * correct / total, correct, correctF, correctG, total))
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, netG, testloader, attack, rank):
