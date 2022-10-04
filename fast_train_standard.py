@@ -37,7 +37,7 @@ parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12358", type=str)
 
 # transformer parameter
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--img_resize', default=224, type=int, help='32/224')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16')
 parser.add_argument('--warmup-steps', default=500, type=int)
