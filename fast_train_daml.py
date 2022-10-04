@@ -54,7 +54,7 @@ parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
-# attack parameter only for CIFAR-10 and SVHN
+# attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=8/255, type=float)
 parser.add_argument('--steps', default=10, type=int)

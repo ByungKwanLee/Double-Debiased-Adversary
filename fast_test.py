@@ -141,8 +141,6 @@ def clean_test():
 def class_num(dataset_name):
     if dataset_name == 'cifar10':
         return 10, 1000
-    elif dataset_name == 'svhn':
-        return 10, 10
     elif dataset_name == 'cifar100':
         return 100
     elif dataset_name == 'tiny':

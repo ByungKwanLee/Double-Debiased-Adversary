@@ -665,7 +665,7 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
 
 
 def vit(depth, dataset, vit_type, img_size, patch_size, pretrained=False, mean=None, std=None):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
     elif dataset == 'cifar100':
         num_classes = 100

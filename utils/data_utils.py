@@ -25,10 +25,6 @@ def get_dataloader(dataset, train_batch_size, test_batch_size, num_workers=1, ro
         trainset = torchvision.datasets.CIFAR100(root=root, train=True, download=True, transform=transform_train)
         testset = torchvision.datasets.CIFAR100(root=root, train=False, download=True, transform=transform_test)
 
-    elif dataset == 'svhn':
-        trainset = torchvision.datasets.SVHN(root=root, split='train', download=True, transform=transform_train)
-        testset = torchvision.datasets.SVHN(root=root, split='test', download=True, transform=transform_test)
-
     elif dataset == 'tiny':
         trainset = torchvision.datasets.ImageFolder(root + '/tiny-imagenet-200/train', transform=transform_train)
         testset = torchvision.datasets.ImageFolder(root + '/tiny-imagenet-200/val', transform=transform_test)

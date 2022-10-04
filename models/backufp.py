@@ -261,7 +261,7 @@ def _create_vision_transformer(variant, pretrained=False, distilled=False, **kwa
     return model
 
 def vit(depth, dataset, vit_type, img_size, patch_size, pretrained=False):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
         img_size = img_size
         hidden = 768

@@ -99,7 +99,7 @@ class WideResNet(nn.Module):
             return self.fc(out)
 
 def wide_resnet(depth=34, widen_factor=10, dataset='cifar10', mean=None, std=None):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
     elif dataset == 'cifar100':
         num_classes = 100
