@@ -57,7 +57,7 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
                           pretrained=pretrain, mean=mean, std=std)
     # Generator
     elif network == 'gen':
-        model = daml_gen(dataset=dataset, img_size=img_size, mean=mean, std=std)
+        model = daml_gen(dataset=dataset, mean=mean, std=std)
 
     else:
         raise NotImplementedError
