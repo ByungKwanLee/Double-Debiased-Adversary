@@ -29,11 +29,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -83,26 +83,13 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        adv_inputs = attack(inputs, targets)
+        inputs = attack(inputs, targets)
 
         # Accelerating forward propagation
         optimizer.zero_grad()
         with autocast():
-            adv_outputs = net(adv_inputs)
-
-            # Reducing overfitting for wide-resnet by https://openreview.net/pdf?id=wxjtOI_8jO in NeurIPS 2021
-            if args.network == 'wide':
-                outputs = net(inputs)
-                adv_loss = F.cross_entropy(adv_outputs, targets, reduction='none')
-                nat_loss = F.cross_entropy(outputs, targets, reduction='none')
-
-                two_loss = torch.stack([adv_loss, nat_loss], dim=1)
-                large_loss, _ = torch.max(two_loss, dim=1)
-                regu_loss = torch.mean(large_loss - nat_loss)
-                nat_loss = torch.mean(nat_loss)
-                loss = nat_loss + regu_loss
-            else:
-                loss = F.cross_entropy(adv_outputs, targets)
+            outputs = net(inputs)
+            loss = F.cross_entropy(outputs, targets)
 
         # Accelerating backward propagation.
         scaler.scale(loss).backward()
@@ -113,7 +100,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         lr_scheduler.step()
 
         train_loss += loss.item()
-        _, predicted = adv_outputs.max(1)
+        _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -247,23 +234,23 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                            test_batch_size=args.test_batch_size, upsample=upsample)
 
     # Load Plain Network
-    if args.network in transformer_list:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                      args.network, args.tran_type,
-                                                                                      args.patch_size, args.img_resize)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-    elif args.network == 'swin':
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                              args.network, args.tran_type,
-                                                                                              args.patch_size, args.img_resize)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-    else:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-
-    net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {checkpoint_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    # if args.network in transformer_list:
+    #     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
+    #                                                                                   args.network, args.tran_type,
+    #                                                                                   args.patch_size, args.img_resize)
+    #     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    # elif args.network == 'swin':
+    #     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
+    #                                                                                           args.network, args.tran_type,
+    #                                                                                           args.patch_size, args.img_resize)
+    #     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    # else:
+    #     checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    #     checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    #
+    # net.load_state_dict(checkpoint['net'])
+    # rprint(f'==> {checkpoint_name}', rank)
+    # rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
     if args.dataset == 'imagenet':

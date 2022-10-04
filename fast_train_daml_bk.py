@@ -13,7 +13,6 @@ from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
 from utils.scheduler import WarmupCosineSchedule
 from models.generator import weights_init
-from tensorboardX import SummaryWriter
 
 # attack loader
 # from attack.attack import attack_loader
@@ -34,7 +33,7 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
@@ -47,7 +46,6 @@ parser.add_argument("--num_steps", default=10000, type=int)
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
 parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
-parser.add_argument('--G_learning_rate', default=0.002, type=float) #for generator
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -76,18 +74,16 @@ scalerF = GradScaler()
 scalerG = GradScaler()
 scalerD = GradScaler()
 
-def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack):
+def train(netF, netG, trainloader, optimizer, lr_scheduler, scaler, attack):
     optimizerF, optimizerG, optimizerD = optimizer
-    lr_schedulerD, lr_schedulerF, lr_schedulerG = lr_scheduler
+    lr_schedulerF, lr_schedulerG, lr_schedulerD = lr_scheduler
     scalerF, scalerG, scalerD = scaler
 
-    net.train()
+    netF.train()
     netG.train()
     train_lossF, train_lossG, train_lossD = 0, 0, 0
     correctF, correctG, correct = 0, 0, 0
     total = 0
-
-    softmax = torch.nn.Softmax(dim=-1)
 
     desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccFG: %.2f%%/%.2f%%/%.2f%%  (%d/%d/%d/%d)' %
             (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], 0, 0, 0, 0, 0, 0, correct, correctF, correctG, total))
@@ -103,45 +99,43 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack):
         adv_inputs1, adv_inputs2 = adv_inputs.split(args.batch_size // 2)
         targets1, targets2 = targets.split(args.batch_size//2)
 
-        # Accelerating forward propagation
+
+        # DAML STEP [1]
+        # (1-1): optimizerF init
         optimizerF.zero_grad()
-
         with autocast():
-            outputsF = net(adv_inputs1)
+            outputsF = netF(adv_inputs1)
             lossF = F.cross_entropy(outputsF, targets1)
-
-        # Accelerating backward propagation
         scalerF.scale(lossF).backward()
         scalerF.step(optimizerF)
         scalerF.update()
 
+        # (1-2): optimizerG init
         optimizerG.zero_grad()
         with autocast():
-            outputsG_ = netG(2 * inputs1 - 1)
+            outputsG_ = netG(inputs1)
             n_outputsG = normalize_clip(outputsG_.clone(), args.eps)
 
             outputsG_ = outputsG_ * n_outputsG
             out_img1 = inputs1 + outputsG_
             out_img1.clamp_(0, 1)
 
-            outputsG = net(out_img1)
-
-            lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
-
-            #lossG = -1. * F.cross_entropy(outputsG, targets1)
+            outputsG = netF(out_img1)
+            lossG = kld_loss(outputsG.softmax(dim=1), outputsF.detach().softmax(dim=1))
 
         scalerG.scale(lossG).backward()
         scalerG.step(optimizerG)
         scalerG.update()
 
+        # DAML STEP [2]
+        # (2): optimizerD init
         optimizerD.zero_grad()
-
         with autocast():
-            adv_out = softmax(net(adv_inputs2))
-            outputsG_ = inputs2 + netG(2 * inputs2 - 1)
+            adv_out = netF(adv_inputs2).softmax(dim=1)
+            outputsG_ = inputs2 + netG(inputs2)
             outputsG_.clamp_(0, 1)
-            gen_out = softmax(net(outputsG_))
-            clean_out = softmax(net(inputs2))
+            gen_out = netF(outputsG_).softmax(dim=1)
+            clean_out = netF(inputs2).softmax(dim=1)
 
             onehot_target2 = get_onehot(adv_out, targets2)
 
@@ -293,13 +287,13 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
-    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
+    netF = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                       img_size=args.img_resize, patch_size=args.patch_size, pretrain=args.pretrain)
-    net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
-    net = net.to(memory_format=torch.channels_last).cuda()
-    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
+    netF = torch.nn.SyncBatchNorm.convert_sync_batchnorm(netF)
+    netF = netF.to(memory_format=torch.channels_last).cuda()
+    netF = torch.nn.parallel.DistributedDataParallel(netF, device_ids=[rank], output_device=[rank])
 
-    netG = get_network(network='gen', depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
+    netG = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                        img_size=args.img_resize, patch_size=args.patch_size, pretrain=args.pretrain)
     netG.apply(weights_init)
     netG = torch.nn.SyncBatchNorm.convert_sync_batchnorm(netG)
@@ -315,41 +309,41 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Load Plain Network
     if args.network in transformer_list:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
+        checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
                                                                                       args.network, args.tran_type,
                                                                                       args.patch_size, args.img_resize)
         checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     elif args.network == 'swin':
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
+        checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
                                                                                               args.network, args.tran_type,
                                                                                               args.patch_size, args.img_resize)
         checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+        checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
         checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
 
-    net.load_state_dict(checkpoint['net'])
+    netF.load_state_dict(checkpoint['net'])
     rprint(f'==> {checkpoint_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
     if args.dataset == 'imagenet':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/4, steps=args.steps)
+        attack = attack_loader(net=netF, attack='fgsm_train', eps=args.eps/4, steps=args.steps)
     elif args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
-        attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
+        attack = attack_loader(net=netF, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
     else:
         rprint('PGD training', rank)
-        attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
+        attack = attack_loader(net=netF, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
     if args.network in transformer_list:
         t_total = args.num_steps
-        optimizerF = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        optimizerF = optim.SGD(netF.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_schedulerF = WarmupCosineSchedule(optimizerF, warmup_steps=args.warmup_steps, t_total=t_total)
     else:
-        optimizerF = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        optimizerF = optim.SGD(netF.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
         lr_schedulerF = torch.optim.lr_scheduler.CyclicLR(optimizerF, base_lr=0, max_lr=args.learning_rate,
         step_size_up=int(round(args.epochs/15))*len(trainloader),
         step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
@@ -360,7 +354,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))
 
-    params = list(net.parameters()) + list(netG.parameters())
+    params = list(netF.parameters()) + list(netG.parameters())
     optimizerD = optim.SGD(params, lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_schedulerD = torch.optim.lr_scheduler.CyclicLR(optimizerD, base_lr=0, max_lr=args.learning_rate,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
@@ -381,8 +375,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack)
-        test(net, netG, testloader, attack, rank)
+        train(netF, netG, trainloader, optimizer, lr_scheduler, scaler, attack)
+        test(netF, netG, testloader, attack, rank)
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)

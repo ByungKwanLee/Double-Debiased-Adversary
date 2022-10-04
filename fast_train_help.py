@@ -207,7 +207,7 @@ def test(net, testloader, attack, rank):
 def trades_loss(logits,
                 logits_adv,
                 targets):
-    criterion_kl = nn.KLDivLoss(size_average=False)
+    criterion_kl = torch.nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
     loss = loss_natural + float(4) * loss_robust

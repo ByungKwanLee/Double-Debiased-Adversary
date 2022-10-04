@@ -358,7 +358,5 @@ def causal_loss(logits_adv, logits_inv):
     return (KL(logits_adv, logits_inv)).mean()
 
 def normalize_clip(feature, eps):
-    feature = feature.detach()
-    scale = eps / torch.abs(feature)
-
+    scale = eps / torch.abs(feature).detach()
     return torch.minimum(torch.ones_like(scale), scale)
