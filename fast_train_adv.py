@@ -29,10 +29,10 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='svhn', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int) # 12 for vit
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
@@ -41,15 +41,14 @@ parser.add_argument('--img_resize', default=224, type=int, help='default/224/384
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
-parser.add_argument('--pretrain', default=False, type=bool)
+parser.add_argument('--pretrain', default=True, type=bool)
 
 # learning parameter
-parser.add_argument('--epochs', default=300, type=int)
-parser.add_argument('--learning_rate', default=0.3, type=float) #3e-2 for ViT
+parser.add_argument('--epochs', default=30, type=int)
+parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
-
 
 # attack parameter only for CIFAR-10 and SVHN
 parser.add_argument('--attack', default='pgd', type=str)
@@ -84,13 +83,26 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
-        inputs = attack(inputs, targets)
+        adv_inputs = attack(inputs, targets)
 
         # Accelerating forward propagation
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets)
+            adv_outputs = net(adv_inputs)
+
+            # Reducing overfitting for wide-resnet by https://openreview.net/pdf?id=wxjtOI_8jO in NeurIPS 2021
+            if args.network == 'wide':
+                outputs = net(inputs)
+                adv_loss = F.cross_entropy(adv_outputs, targets, reduction='none')
+                nat_loss = F.cross_entropy(outputs, targets, reduction='none')
+
+                two_loss = torch.stack([adv_loss, nat_loss], dim=1)
+                large_loss, _ = torch.max(two_loss, dim=1)
+                regu_loss = torch.mean(large_loss - nat_loss)
+                nat_loss = torch.mean(nat_loss)
+                loss = nat_loss + regu_loss
+            else:
+                loss = F.cross_entropy(adv_outputs, targets)
 
         # Accelerating backward propagation.
         scaler.scale(loss).backward()
@@ -101,7 +113,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         lr_scheduler.step()
 
         train_loss += loss.item()
-        _, predicted = outputs.max(1)
+        _, predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -281,7 +293,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
             if args.network in transformer_list:
-                res = 224
+                res = args.img_resize
             else:
                 res = get_resolution(epoch=epoch, min_res=160, max_res=192,
                                      start_ramp=int(math.floor(args.epochs * 0.5)),

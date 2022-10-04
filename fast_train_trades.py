@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='TRADES', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int)
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
@@ -45,8 +45,8 @@ parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
-parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
+parser.add_argument('--epochs', default=10, type=int)
+parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
