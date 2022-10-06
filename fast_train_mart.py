@@ -51,7 +51,7 @@ parser.add_argument('--test_batch_size', default=64, type=float)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
-parser.add_argument('--eps', default=0.03, type=float)
+parser.add_argument('--eps', default=8/255, type=float)
 parser.add_argument('--steps', default=10, type=int)
 args = parser.parse_args()
 
@@ -70,6 +70,12 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
+if not os.path.isdir(f'checkpoint/mart/{args.dataset}'): os.mkdir(f'checkpoint/mart/{args.dataset}')
+if args.network in transformer_list:
+    saving_ckpt_name = f'./checkpoint/mart/{args.dataset}/{args.dataset}_mart_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+else:
+    saving_ckpt_name = f'./checkpoint/mart/{args.dataset}/{args.dataset}_mart_{args.network}{args.depth}_best.t7'
+
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     net.train()
@@ -77,9 +83,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     correct = 0
     total = 0
 
-    desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-            (lr_scheduler.get_lr()[0], 0, 0, correct, total))
-
+    desc = (f'[Train/LR={lr_scheduler.get_lr()[0]:.3f}] Loss: {0:.3f} | Acc: {0:.2f}')
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -105,8 +109,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train/LR=%.3f] Loss: %.3f | Acc: %.3f%% (%d/%d)' %
-                (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Train/LR={lr_scheduler.get_lr()[0]:.3f}] Loss: {train_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
         prog_bar.set_description(desc, refresh=True)
 
 
@@ -114,12 +117,12 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
 def test(net, testloader, attack, rank):
     global best_acc
     net.eval()
+
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss/(0+1), 0, correct, total))
 
+    desc = (f'[Test/Clean] Loss: {test_loss/(0+1):.3f} | Acc: {0:.2f}')
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -134,8 +137,7 @@ def test(net, testloader, attack, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Test/Clean] Loss: {test_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
         prog_bar.set_description(desc, refresh=True)
 
     # Save clean acc.
@@ -145,9 +147,7 @@ def test(net, testloader, attack, rank):
     correct = 0
     total = 0
 
-    desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss / (0 + 1), 0, correct, total))
-
+    desc = (f'[Test/PGD] Loss: {test_loss / (0 + 1):.3f} | Acc: {0:.2f}')
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -163,8 +163,7 @@ def test(net, testloader, attack, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Test/PGD] Loss: {test_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
         prog_bar.set_description(desc, refresh=True)
 
     # Save adv acc.
@@ -173,25 +172,18 @@ def test(net, testloader, attack, rank):
     # compute acc
     acc = (clean_acc + adv_acc)/2
 
-    rprint('Current Accuracy is {:.2f}/{:.2f}!!'.format(clean_acc, adv_acc), rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
 
     if acc > best_acc:
         state = {
             'net': net.state_dict(),
         }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        if not os.path.isdir('checkpoint/pretrain'):
-            os.mkdir('checkpoint/pretrain')
 
+        torch.save(state, saving_ckpt_name)
+        rprint(f'Saving~ {saving_ckpt_name}', rank)
+
+        # update best acc
         best_acc = acc
-        if rank == 0:
-            torch.save(state, './checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                                args.network,
-                                                                                args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_mart_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                            args.network,
-                                                                            args.depth))
 
 def mart_loss(logits,
             logits_adv,
@@ -217,7 +209,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     torch.cuda.set_device(rank)
 
     # DDP environment settings
-    print("Use GPU: {} for training".format(gpu_list[rank]))
+    print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
@@ -234,10 +226,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                   test_batch_size=args.test_batch_size)
 
     # Load ADV Network
-    checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-    checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+    if args.network in transformer_list:
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+    else:
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {checkpoint_name}', rank)
+    rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
@@ -258,7 +254,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # training and testing
     for epoch in range(args.epochs):
-        rprint('\nEpoch: %d' % (epoch+1), rank)
+        rprint(f'\nEpoch: {epoch + 1}', rank)
+        if args.dataset == "imagenet":
+            if args.network in transformer_list:
+                res = args.img_resize
+            else:
+                res = get_resolution(epoch=epoch, min_res=160, max_res=192,
+                                     start_ramp=int(math.floor(args.epochs * 0.5)),
+                                     end_ramp=int(math.floor(args.epochs * 0.7)))
+            decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)
 
