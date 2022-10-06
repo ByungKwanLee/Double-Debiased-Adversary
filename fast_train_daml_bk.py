@@ -125,28 +125,9 @@ def train(netF, netG, trainloader, optimizer, lr_scheduler, scaler, attack):
             outputsF = netF(inputs1)
             outputsG = netG(inputs1)
 
-            # training accuracy, vgg-16, cifar10, clean input만 보고 미래에 T가 들어왔을 때 50% 로 어디로 갈지 예측가능
             # first lossG: logit difference
             diff_y = adv_outputsF - outputsF
             lossG = (outputsG - diff_y.detach()).square().mean()
-
-            # training accuracy, vgg-16, cifar10, clean input만 보고 미래에 T가 들어왔을 때 21% 로 어디로 갈지 예측가능
-            # second lossG: KL divergence
-            # pred_prob = (outputsF.detach() + outputsG).softmax(dim=1)
-            # tar_prob = adv_outputsF.softmax(dim=1).detach()
-            # lossG = (pred_prob * ((pred_prob+1e-3).log() - (tar_prob+1e-3).log())).sum(dim=1).mean()
-
-            # The best training accuracy, vgg-16, cifar10, clean input만 보고 미래에 T가 들어왔을 때 44% 로 어디로 갈지 예측가능
-            # third lossG: Split Correct prediction and Wrong prediction
-            # _, attack_targets = adv_outputsF.max(1)
-            # lossG = F.cross_entropy(outputsG, attack_targets)
-
-            # training accuracy, vgg-16, cifar10, clean input만 보고 미래에 T가 들어왔을 때 41% 로 어디로 갈지 예측가능
-            # fourth lossG: Plus version of Split Correct prediction and Wrong prediction
-            # pred_prob = outputsG.softmax(dim=1)
-            # tar_prob = adv_outputsF.softmax(dim=1).detach()
-            # _, attack_targets = adv_outputsF.max(1)
-            # lossG = F.cross_entropy(outputsG, attack_targets) + (pred_prob * ((pred_prob+1e-3).log() - (tar_prob+1e-3).log())).sum(dim=1).mean()
 
         scalerG.scale(lossG).backward()
         scalerG.step(optimizerG)
@@ -154,24 +135,24 @@ def train(netF, netG, trainloader, optimizer, lr_scheduler, scaler, attack):
 
         # DAML STEP [2]
         # (2): optimizerD init
-        # optimizerD.zero_grad()
-        # with autocast():
-        #     outputsF = netF(inputs2)
-        #     outputsG = netG(inputs2)
-        #     lossD = F.cross_entropy(outputsF + outputsG.detach(), targets2)
-        #
-        # scalerD.scale(lossD).backward()
-        # scalerD.step(optimizerF)
-        # scalerD.update()
+        optimizerD.zero_grad()
+        with autocast():
+            outputsF = netF(inputs2)
+            outputsG = netG(inputs2)
+            lossD = F.cross_entropy(outputsF + outputsG.detach(), targets2)
+
+        scalerD.scale(lossD).backward()
+        scalerD.step(optimizerF)
+        scalerD.update()
 
         # scheduling for Cyclic LR
         lr_schedulerF.step()
         lr_schedulerG.step()
-        # lr_schedulerD.step()
+        lr_schedulerD.step()
 
         # train_lossF += lossF.item()
         train_lossG += lossG.item()
-        # train_lossD += lossD.item()
+        train_lossD += lossD.item()
 
         _, predictedF = adv_outputsF.max(1)
         _, predictedG = (outputsG+outputsF).max(1)
