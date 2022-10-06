@@ -58,24 +58,18 @@ net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, 
                   img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
 net = net.cuda()
 
-# checkpoint base name
-args.base = '' if args.base == 'standard' else '_' + args.base
+# checkpoint base tag
+base_tag = '' if args.base == 'standard' else '_' + args.base
 
 # setting checkpoint name
-if args.network in ['vit', 'deit']:
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset, args.base,
-                                                                                    args.network, args.tran_type,
-                                                                                    args.patch_size, args.img_resize)
-elif args.network == 'swin':
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset, args.base,
-                                                                                            args.network, args.tran_type,
-                                                                                            args.patch_size, args.img_resize)
+if args.network in transformer_list:
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s%s_%s%s_best.t7' % (args.dataset, args.dataset, args.base, args.network, args.depth)
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
 
 # load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
-print(" [*] Loaded network params : %s" %(net_checkpoint_name.split('/')[-1]))
+print(f"[*] Loaded network params : {net_checkpoint_name.split('/')[-1]}")
 checkpoint_module(net_checkpoint, net)
 
 # init criterion
@@ -111,7 +105,7 @@ def adv_test():
             total += targets.size(0)
             adv_correct += adv_predicted.eq(targets).sum().item()
 
-            desc = ('[Test/%s] Adv: %.4f%%' % (key, 100. * adv_correct / total))
+            desc = (f'[Test/{key}] Adv: {100.*adv_correct/total:.2f}%')
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
@@ -135,7 +129,7 @@ def clean_test():
         total += targets.size(0)
         correct += cln_predicted.eq(targets).sum().item()
 
-        desc = ('[Test] Clean: %.2f%%' % (100. * correct / total))
+        desc = ('[Test] Clean: {100. * correct / total:.2f}%')
         prog_bar.set_description(desc, refresh=True)
 
 
@@ -185,7 +179,7 @@ def adv_analysis_test():
             correct_want4 += want4.sum().item()
 
 
-            desc = ('[Test/%s] Adv: %.4f%%' % (key, 100. * adv_correct / total))
+            desc = (f'[Test/{key}] Adv: {100.*adv_correct/total:.2f}%')
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
@@ -271,7 +265,7 @@ def measure_adversarial_drift():
             total += targets.size(0)
             adv_correct += adv_predicted.eq(targets).sum().item()
 
-            desc = ('[Test/%s] Adv: %.4f%%' % (key, 100. * adv_correct / total))
+            desc = (f'[Test/{key}] Adv: {100.*adv_correct/total:.2f}%')
             prog_bar.set_description(desc, refresh=True)
 
         pred_matrix = pred_matrix / (batch_idx + 1)

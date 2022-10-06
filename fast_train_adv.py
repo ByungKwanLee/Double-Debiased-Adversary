@@ -174,6 +174,7 @@ def test(net, testloader, attack, rank):
     # current accuracy print
     rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
 
+    # saving checkpoint
     if acc > best_acc:
         state = {
             'net': net.state_dict(),

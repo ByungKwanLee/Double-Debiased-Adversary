@@ -74,6 +74,14 @@ scalerF = GradScaler()
 scalerG = GradScaler()
 scalerD = GradScaler()
 
+# make checkpoint folder and set checkpoint name for saving
+if not os.path.isdir(f'checkpoint/daml/{args.dataset}'): os.mkdir(f'checkpoint/daml/{args.dataset}')
+if args.network in transformer_list:
+    saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+else:
+    saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}{args.depth}_best.t7'
+
+
 def train(netF, netG, trainloader, optimizer, lr_scheduler, scaler, attack):
     optimizerF, optimizerG, optimizerD = optimizer
     lr_schedulerF, lr_schedulerG, lr_schedulerD = lr_scheduler
@@ -185,8 +193,7 @@ def test(netF, netG, testloader, attack, rank):
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss/(0+1), 0, correct, total))
+    desc = (f'[Test/Clean] Loss: {test_loss/(0+1):.3f} | Acc: {0:.2f}')
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -202,8 +209,7 @@ def test(netF, netG, testloader, attack, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Test/Clean] Loss: {test_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
         prog_bar.set_description(desc, refresh=True)
 
     # Save clean acc.
@@ -246,37 +252,22 @@ def test(netF, netG, testloader, attack, rank):
     # compute acc
     acc = 100 * correctG / total
 
-    rprint('Current Accuracy is {:.2f}/{:.2f}/{:.2f}!!'.format(clean_acc, adv_acc, 100 * correctG / total), rank)
+    # current accuracy print
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{100 * correctG / total:.2f}!!', rank)
 
-    state = {
-        'net': netF.state_dict(),
-        'netG': netG.state_dict(),
-    }
-    if not os.path.isdir('checkpoint'):
-        os.mkdir('checkpoint')
-    if not os.path.isdir('checkpoint/pretrain'):
-        os.mkdir('checkpoint/pretrain')
+    # saving checkpoint
+    if acc > best_acc:
+        state = {
+            'net': netF.state_dict(),
+            'netG': netG.state_dict(),
+        }
 
-    if rank == 0:
-        if args.network in transformer_list:
-            torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                            args.network, args.tran_type,
-                                                                                            args.patch_size, args.img_resize))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                        args.network, args.tran_type,
-                                                                                        args.patch_size, args.img_resize))
-        elif args.network == 'swin':
-            torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                    args.network, args.tran_type,
-                                                                                                    args.patch_size, args.img_resize))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                args.network, args.tran_type,
-                                                                                                args.patch_size, args.img_resize))
-        else:
-            torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                                args.network, args.depth))
-            print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                            args.network, args.depth))
+        torch.save(state, saving_ckpt_name)
+        rprint(f'Saving~ {saving_ckpt_name}', rank)
+
+        # update best acc
+        best_acc = acc
+
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # print configuration
@@ -286,7 +277,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     torch.cuda.set_device(rank)
 
     # DDP environment settings
-    print("Use GPU: {} for training".format(gpu_list[rank]))
+    print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
@@ -312,21 +303,13 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Load Plain Network
     if args.network in transformer_list:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                      args.network, args.tran_type,
-                                                                                      args.patch_size, args.img_resize)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-    elif args.network == 'swin':
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_adv_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                              args.network, args.tran_type,
-                                                                                              args.patch_size, args.img_resize)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+        pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-
+        pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     netF.load_state_dict(checkpoint['net'])
-    rprint(f'==> {checkpoint_name}', rank)
+    rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
@@ -369,7 +352,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     scaler = [scalerF, scalerG, scalerD]
 
     for epoch in range(args.epochs):
-        rprint('\nEpoch: %d' % (epoch+1), rank)
+        rprint(f'\nEpoch: {epoch+1}', rank)
         if args.dataset == "imagenet":
             if args.network in transformer_list:
                 res = args.img_resize
