@@ -34,7 +34,7 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
@@ -45,9 +45,10 @@ parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
-parser.add_argument('--epochs', default=60, type=int)
-parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
-parser.add_argument('--G_learning_rate', default=0.002, type=float) #for generator
+parser.add_argument('--epochs', default=100, type=int)
+parser.add_argument('--f_lr', default=0.1, type=float) #3e-2 for ViT
+parser.add_argument('--g_lr', default=0.002, type=float) #for generator
+parser.add_argument('--d_lr', default=0.01, type=float) #for generator
 parser.add_argument('--beta1', default=0.5, type=float) #for generator
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
@@ -84,7 +85,7 @@ check_dir(log_dir)
 def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer):
     global counter
     optimizerF, optimizerG, optimizerD = optimizer
-    lr_schedulerD, lr_schedulerF, lr_schedulerG = lr_scheduler
+    lr_schedulerF, lr_schedulerG, lr_schedulerD = lr_scheduler
     scalerF, scalerG, scalerD = scaler
 
     net.train()
@@ -123,7 +124,19 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
 
         optimizerG.zero_grad()
         with autocast():
-            outputsG_ = netG(2 * inputs1 - 1)
+            # outputsG_ = netG(2 * inputs1 - 1)
+            # n_outputsG = normalize_clip(outputsG_.clone(), args.eps)
+            #
+            # outputsG_ = outputsG_ * n_outputsG
+            # out_img1 = inputs1 + outputsG_
+            # out_img1.clamp_(0, 1)
+            #
+            # outputsG = net(out_img1)
+            #
+            # lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
+            #lossG = -1. * F.cross_entropy(outputsG, targets1)
+
+            outputsG_, latentG = netG(2 * inputs1 - 1)
             n_outputsG = normalize_clip(outputsG_.clone(), args.eps)
 
             outputsG_ = outputsG_ * n_outputsG
@@ -132,9 +145,9 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
 
             outputsG = net(out_img1)
 
-            lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
+            ce_g = F.cross_entropy(latentG, targets1)
 
-            #lossG = -1. * F.cross_entropy(outputsG, targets1)
+            lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
 
         scalerG.scale(lossG).backward()
         scalerG.step(optimizerG)
@@ -143,27 +156,36 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
         optimizerD.zero_grad()
 
         with autocast():
-            adv_out = softmax(net(adv_inputs2))
-            outputsG_ = inputs2 + netG(2 * inputs2 - 1)
-            outputsG_.clamp_(0, 1)
-            gen_out = softmax(net(outputsG_))
-            clean_out = softmax(net(inputs2))
+            adv_out = net(adv_inputs2)
+            outputsD_ = inputs2 + netG(2 * inputs2 - 1)
+            outputsD_.clamp_(0, 1)
+            gen_out = net(outputsD_)
+            #clean_out = softmax(net(inputs2))
+            loss = torch.nn.CrossEntropyLoss()
 
             onehot_target2 = get_onehot(adv_out, targets2)
+            #v_f = kld_loss(adv_out, gen_out)
+            v_f = loss(gen_out, softmax(adv_out))
+            u = F.cross_entropy(net(inputs2), targets2) - v_f
 
-            u = onehot_target2 - clean_out - adv_out + gen_out # B X C
-            v_f = adv_out - gen_out # B X C
+            # u = onehot_target2 - clean_out - adv_out + gen_out # B X C
+            # v_f = adv_out - gen_out # B X C
+            #
+            # norm_u = (u - u.mean(1).unsqueeze(-1)) / u.std(1).unsqueeze(-1)
+            # norm_vf = (v_f - v_f.mean(1).unsqueeze(-1)) / v_f.std(1).unsqueeze(-1)
+            #
+            #
+            # # norm_vf = (v_f - torch.min(v_f, -1)[0].unsqueeze(-1)) / (torch.max(v_f, -1)[0].unsqueeze(-1) - torch.min(v_f, -1)[0].unsqueeze(-1))
+            # v = (adv_inputs2 - outputsD_).reshape(int(args.batch_size / 2), -1) # B X HWC
+            # u_loss = (((u.T @ u) - (u.T @ u).diag().diag()) ** 2).mean()
+            # v_loss = (((v.T @ v) - (v.T @ v).diag().diag()) ** 2).mean()
+            #
+            # # mc_loss = (v_f @ u.T @ u @ v_f.T).trace() / (args.batch_size / 2)
+            # mc_loss = (norm_vf @ norm_u.T @ norm_u @ norm_vf.T).trace() / (args.batch_size / 2)
 
-            # norm_u = (u - torch.min(u, -1)[0].unsqueeze(-1)) / (torch.max(u, -1)[0].unsqueeze(-1) - torch.min(u, -1)[0].unsqueeze(-1))
+            mc_loss = (u * v_f) ** 2
 
-            v = (adv_inputs2 - outputsG_).reshape(int(args.batch_size / 2), -1) # B X HWC
-
-            u_loss = (((u.T @ u) - (u.T @ u).diag().diag()) ** 2).mean()
-            v_loss = (((v.T @ v) - (v.T @ v).diag().diag()) ** 2).mean()
-
-            mc_loss = (v_f @ u.T @ u @ v_f.T).trace() / (args.batch_size / 2)
-
-            lossD = mc_loss + u_loss + 0.01 * v_loss
+            lossD = mc_loss# + u_loss + 0.01 * v_loss
 
         scalerD.scale(lossD).backward()
         scalerD.step(optimizerD)
@@ -179,8 +201,8 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
             writer.add_scalar('Train_Loss/lossG', lossG, counter)
             writer.add_scalar('Train_Loss/lossD', lossD, counter)
             writer.add_scalar('Train_Loss/mc_loss', mc_loss, counter)
-            writer.add_scalar('Train_Loss/u_loss', u_loss, counter)
-            writer.add_scalar('Train_Loss/v_loss', 0.01 * v_loss, counter)
+            # writer.add_scalar('Train_Loss/u_loss', u_loss, counter)
+            # writer.add_scalar('Train_Loss/v_loss', v_loss, counter)
 
             writer.add_scalar('lr/f_lr', lr_schedulerF.get_last_lr()[0], counter)
             writer.add_scalar('lr/g_lr', lr_schedulerG.get_last_lr()[0], counter)
@@ -366,23 +388,23 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init optimizer and lr scheduler
     if args.network in transformer_list:
         t_total = args.num_steps
-        optimizerF = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        optimizerF = optim.SGD(net.parameters(), lr=args.f_lr, momentum=0.9, weight_decay=args.weight_decay)
         lr_schedulerF = WarmupCosineSchedule(optimizerF, warmup_steps=args.warmup_steps, t_total=t_total)
     else:
-        optimizerF = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-        lr_schedulerF = torch.optim.lr_scheduler.CyclicLR(optimizerF, base_lr=0, max_lr=args.learning_rate,
+        optimizerF = optim.SGD(net.parameters(), lr=args.f_lr, momentum=0.9, weight_decay=args.weight_decay)
+        lr_schedulerF = torch.optim.lr_scheduler.CyclicLR(optimizerF, base_lr=0, max_lr=args.f_lr,
         step_size_up=int(round(args.epochs/15))*len(trainloader),
         step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
-    optimizerG = optim.SGD(netG.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_schedulerG = torch.optim.lr_scheduler.CyclicLR(optimizerG, base_lr=0, max_lr=args.learning_rate,
+    optimizerG = optim.SGD(netG.parameters(), lr=args.g_lr, momentum=0.9, weight_decay=args.weight_decay)
+    lr_schedulerG = torch.optim.lr_scheduler.CyclicLR(optimizerG, base_lr=0, max_lr=args.g_lr,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))
 
     params = list(net.parameters()) + list(netG.parameters())
-    optimizerD = optim.SGD(params, lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_schedulerD = torch.optim.lr_scheduler.CyclicLR(optimizerD, base_lr=0, max_lr=args.learning_rate,
+    optimizerD = optim.SGD(params, lr=args.d_lr, momentum=0.9, weight_decay=args.weight_decay)
+    lr_schedulerD = torch.optim.lr_scheduler.CyclicLR(optimizerD, base_lr=0, max_lr=args.d_lr,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))

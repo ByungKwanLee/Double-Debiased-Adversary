@@ -130,7 +130,7 @@ def KLDivergence(q, p):
     return kld.sum(dim=1)
 
 def kld_loss(q, p):
-    kld = q * (q / p).log()
+    kld = q * (q.log() - (p + 1e-3).log())
     return kld.sum(dim=1).mean()
 
 # imagenet-c dataset loadername
