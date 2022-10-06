@@ -163,3 +163,4 @@ def daml_gen(dataset='imagenet', mean=None, std=None):
         raise NotImplementedError
 
     return ResnetGenerator(3, 3, ngf=64, norm_type='batch', act_type='relu', mean=mean, std=std, img_size=img_size)
+
