@@ -44,7 +44,7 @@ def get_scheduler(optimizer, args):
 
 class ResnetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf, norm_type, act_type='selu', use_dropout=False, n_blocks=6,
-                 padding_type='reflect', mean=None, std=None, img_size=None):
+                 padding_type='reflect', mean=None, std=None, img_size=None, num_classes=None):
         assert (n_blocks >= 0)
         super(ResnetGenerator, self).__init__()
 
@@ -55,6 +55,7 @@ class ResnetGenerator(nn.Module):
         self.mean = mean.view(1, -1, 1, 1)
         self.std = std.view(1, -1, 1, 1)
         self.img_size = img_size
+        self.num_classes = num_classes
 
         use_bias = norm_type == 'instance'
 
@@ -107,11 +108,26 @@ class ResnetGenerator(nn.Module):
         self.model0 = nn.Sequential(*model0)
         self.model1 = nn.Sequential(*model1)
 
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.mlp = nn.Sequential(nn.Linear(self.ngf * 4, self.ngf * 8),
+                                 nn.BatchNorm1d(self.ngf * 8),
+                                 nn.LeakyReLU(0.2),
+                                 nn.Linear(self.ngf * 8, self.ngf * 4),
+                                 nn.BatchNorm1d(self.ngf * 4),
+                                 nn.LeakyReLU(0.2),
+                                 nn.Linear(self.ngf * 4, self.num_classes),
+                                 )
+
     def forward(self, x):
         x = self.model0(x)
-        x = self.model1(x)
 
-        return x
+        latent = self.avgpool(x)
+        latent = torch.flatten(latent, 1)
+        latent = self.mlp(latent)
+
+        out = self.model1(x)
+
+        return out, latent
 
 # Define a resnet block
 class ResnetBlock(nn.Module):
@@ -157,15 +173,21 @@ class ResnetBlock(nn.Module):
 
 def daml_gen(dataset='imagenet', img_size=None, mean=None, std=None):
     if dataset == 'cifar10' or dataset == 'svhn':
+        num_classes = 10
         ngf = 64
     elif dataset == 'cifar100':
+        num_classes = 100
         ngf = 64
     elif dataset == 'tiny':
+        num_classes = 200
         ngf = 64
     elif dataset == 'imagenet':
+        num_classes = 1000
         ngf = 64
     else:
         raise NotImplementedError
 
-    return ResnetGenerator(3, 3, ngf, norm_type='batch', act_type='relu', mean=mean, std=std, img_size=img_size)
+    return ResnetGenerator(3, 3, ngf, norm_type='batch', act_type='relu', mean=mean, std=std, img_size=img_size, num_classes=num_classes)
+
+
 
