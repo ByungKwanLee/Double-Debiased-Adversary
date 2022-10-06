@@ -129,7 +129,7 @@ def clean_test():
         total += targets.size(0)
         correct += cln_predicted.eq(targets).sum().item()
 
-        desc = ('[Test] Clean: {100. * correct / total:.2f}%')
+        desc = (f'[Test] Clean: {100. * correct / total:.2f}%')
         prog_bar.set_description(desc, refresh=True)
 
 

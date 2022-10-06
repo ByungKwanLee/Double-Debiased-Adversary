@@ -71,6 +71,8 @@ best_acc = 0
 scaler = GradScaler()
 
 # make checkpoint folder and set checkpoint name for saving
+if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
+if not os.path.isdir(f'checkpoint/help'): os.mkdir(f'checkpoint/help')
 if not os.path.isdir(f'checkpoint/help/{args.dataset}'): os.mkdir(f'checkpoint/help/{args.dataset}')
 if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/help/{args.dataset}/{args.dataset}_help_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
