@@ -31,10 +31,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
 parser.add_argument('--dataset', default='cifar100', type=str)
-parser.add_argument('--network', default='tnt', type=str)
-parser.add_argument('--depth', default=12, type=int, help='cait depth = 24')
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=50, type=int, help='cait depth = 24')
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12358", type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
@@ -45,9 +45,9 @@ parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--pretrain', default=True, type=bool)
 
 # learning parameter
-parser.add_argument('--epochs', default=200, type=int)
-parser.add_argument('--learning_rate', default=3e-2, type=float) #1e-4 for ViT
-parser.add_argument('--weight_decay', default=5e-4, type=float) #5e-5 for svhn
+parser.add_argument('--epochs', default=30, type=int)
+parser.add_argument('--learning_rate', default=0.5, type=float) #1e-4 for ViT
+parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 
@@ -68,14 +68,20 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
+# make checkpoint folder and set checkpoint name for saving
+if not os.path.isdir(f'checkpoint/standard/{args.dataset}'): os.mkdir(f'checkpoint/standard/{args.dataset}')
+if args.network in transformer_list:
+    saving_ckpt_name = f'./checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+else:
+    saving_ckpt_name = f'./checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
+
 def train(net, trainloader, optimizer, lr_scheduler, scaler):
     net.train()
     train_loss = 0
     correct = 0
     total = 0
 
-    desc = ('[Train/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)' % (lr_scheduler.get_lr()[0], 0, 0, 0, 0))
-
+    desc = (f'[Train/LR={lr_scheduler.get_lr()[0]:.3f}] Loss: {0:.3f} | Acc: {0:.2f}')
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -99,8 +105,8 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Train/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)'
-                % (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Train/LR={lr_scheduler.get_lr()[0]:.3f}] Loss: {train_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
+
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, testloader, lr_scheduler, rank):
@@ -111,7 +117,7 @@ def test(net, testloader, lr_scheduler, rank):
     correct = 0
     total = 0
 
-    desc = ('[Test/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)' % (lr_scheduler.get_lr()[0], 0, 0, correct, total))
+    desc = (f'[Test/Clean] Loss: {test_loss / (0 + 1):.3f} | Acc: {0:.2f}')
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -126,8 +132,7 @@ def test(net, testloader, lr_scheduler, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/LR=%.3f] Loss: %.2f | Acc: %.2f%% (%d/%d)'
-                % (lr_scheduler.get_lr()[0], test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Test/Clean] Loss: {test_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
         prog_bar.set_description(desc, refresh=True)
 
     # Save checkpoint.
@@ -139,32 +144,12 @@ def test(net, testloader, lr_scheduler, rank):
         state = {
             'net': net.state_dict(),
         }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        if not os.path.isdir('checkpoint/pretrain'):
-            os.mkdir('checkpoint/pretrain')
 
+        torch.save(state, saving_ckpt_name)
+        rprint(f'Saving~ {saving_ckpt_name}', rank)
+
+        # update best acc
         best_acc = acc
-        if rank == 0:
-            if args.network in transformer_list:
-                torch.save(state, './checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                            args.network, args.tran_type,
-                                                                                            args.patch_size, args.img_resize))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                        args.network, args.tran_type,
-                                                                                        args.patch_size, args.img_resize))
-            elif args.network == 'swin':
-                torch.save(state, './checkpoint/pretrain/%s/%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                    args.network, args.tran_type,
-                                                                                                    args.patch_size, args.img_resize))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                args.network, args.tran_type,
-                                                                                                args.patch_size, args.img_resize))
-            else:
-                torch.save(state, './checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                                args.network, args.depth))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                            args.network, args.depth))
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # print configuration
@@ -174,7 +159,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     torch.cuda.set_device(rank)
 
     # DDP environment settings
-    print("Use GPU: {} for training".format(gpu_list[rank]))
+    print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
     # init model and Distributed Data Parallel
@@ -197,10 +182,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                            test_batch_size=args.test_batch_size, upsample=upsample)
 
     if args.network == 'tnt' and args.tran_type == 'base':
-        checkpoint_name = 'checkpoint/pretrain/imagenet/imagenet_tnt_base_patch16_224_best.pth.tar'
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+        pretrain_ckpt_name = 'checkpoint/standard/imagenet/imagenet_tnt_base_patch16_224_best.pth.tar'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
         net.load_state_dict(checkpoint, strict=False)
-        rprint(f'==> {checkpoint_name}', rank)
+        rprint(f'==> {pretrain_ckpt_name}', rank)
         rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     if args.network in transformer_list:
@@ -218,7 +203,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('\nEpoch: %d' % (epoch+1), rank)
         if args.dataset == "imagenet":
             if args.network in transformer_list:
-                res = 224
+                res = args.img_resize
             else:
                 res = get_resolution(epoch=epoch, min_res=160, max_res=192,
                                      start_ramp=int(math.floor(args.epochs * 0.5)),

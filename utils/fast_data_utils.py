@@ -25,10 +25,6 @@ def save_data_for_beton(dataset, root='../data'):
         trainset = torchvision.datasets.CIFAR100(root=root, train=True, download=True)
         testset = torchvision.datasets.CIFAR100(root=root, train=False, download=True)
 
-    if dataset == 'svhn':
-        trainset = torchvision.datasets.SVHN(root=root, split='train', download=True)
-        testset = torchvision.datasets.SVHN(root=root, split='test', download=True)
-
     if dataset == 'tiny':
         trainset = torchvision.datasets.ImageFolder(root + '/tiny-imagenet-200/train')
         testset = torchvision.datasets.ImageFolder(root + '/tiny-imagenet-200/val')
@@ -123,7 +119,7 @@ def save_data_for_beton(dataset, root='../data'):
             writer.from_indexed_dataset(ds)
 
 
-def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=0, dist=True, shuffle=False, upsample=False):
+def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=20, dist=True, shuffle=False, upsample=False):
 
     gpu = f'cuda:{torch.cuda.current_device()}'
     decoder = None
@@ -131,8 +127,6 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
     if dataset == 'cifar10':
         img_size = 32
     if dataset == 'cifar100':
-        img_size = 32
-    if dataset == 'svhn':
         img_size = 32
     if dataset == 'tiny':
         img_size = 64

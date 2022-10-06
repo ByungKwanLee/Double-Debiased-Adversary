@@ -244,7 +244,7 @@ class ResNet(nn.Module):
 
 def resnet(depth=18, dataset='imagenet', mean=None, std=None):
 
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
     elif dataset == 'cifar100':
         num_classes = 100

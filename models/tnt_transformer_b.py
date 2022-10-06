@@ -335,7 +335,7 @@ def _conv_filter(state_dict, patch_size=16):
 
 
 def tnt_b(depth, dataset, tnt_type, img_size, patch_size, pretrained=False, mean=None, std=None):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
     elif dataset == 'cifar100':
         num_classes = 100

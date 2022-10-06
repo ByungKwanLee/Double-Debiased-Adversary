@@ -189,7 +189,7 @@ def _create_deit(variant, pretrained=False, distilled=False, **kwargs):
     return model
 
 def deit(depth, dataset, deit_type, img_size, patch_size, pretrained=False, mean=None, std=None):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
 
     elif dataset == 'cifar100':

@@ -24,7 +24,7 @@ on Volta GPU architecture.
 
 ## Hyper-Parameter Settings
 ***If overfitting happens, increasing warmup step may be helpful***
-### Low-dimensional dataset (CIFAR-10/SVHN: 8/255)
+### Low-dimensional dataset (CIFAR-10: 8/255)
 * [x] **[standard]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4), CyclicLR (warmpup: 2)
 * [x] **[AT]** batch (128), learning rate (0.5), epoch (30), weight decay (5e-4), CyclicLR (warmpup: 2)
 ---
@@ -94,7 +94,6 @@ I use python version 3.9, pytorch, torchvision, and cuda 11.3. For more differen
 ## Available Datasets
 * [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)
 * [CIFAR-100](https://www.cs.toronto.edu/~kriz/cifar.html)
-* [SVHN](http://ufldl.stanford.edu/housenumbers/)
 * [Tiny-ImageNet](https://www.kaggle.com/c/tiny-imagenet/overview)
 * [ImageNet](https://www.image-net.org/)
 

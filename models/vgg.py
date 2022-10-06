@@ -70,7 +70,7 @@ def make_layers(cfg: List[Union[str, int]], batch_norm: bool = False) -> nn.Sequ
 
 
 def vgg(depth, dataset, mean, std):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
     elif dataset == 'cifar100':
         num_classes = 100

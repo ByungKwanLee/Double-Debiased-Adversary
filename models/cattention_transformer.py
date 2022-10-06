@@ -356,7 +356,7 @@ def _create_cait(variant, pretrained=False, **kwargs):
     return model
 
 def cait(depth, dataset, cait_type, img_size, patch_size, pretrained=False, mean=None, std=None):
-    if dataset == 'cifar10' or dataset == 'svhn':
+    if dataset == 'cifar10':
         num_classes = 10
 
     elif dataset == 'cifar100':

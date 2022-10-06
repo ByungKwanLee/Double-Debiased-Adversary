@@ -1,10 +1,5 @@
-import torch
 import torch.nn as nn
-from torch.nn import init
-import functools
-from torch.autograd import Variable
 from torch.optim import lr_scheduler
-import numpy as np
 import math
 
 def weights_init(m, act_type='relu'):
@@ -155,16 +150,16 @@ class ResnetBlock(nn.Module):
         out = x + self.conv_block(x)
         return out
 
-def daml_gen(dataset='imagenet', img_size=None, mean=None, std=None):
-    if dataset == 'cifar10' or dataset == 'svhn':
-        ngf = 64
+def daml_gen(dataset='imagenet', mean=None, std=None):
+    if dataset == 'cifar10':
+        img_size = 32
     elif dataset == 'cifar100':
-        ngf = 64
+        img_size = 32
     elif dataset == 'tiny':
-        ngf = 64
+        img_size = 64
     elif dataset == 'imagenet':
-        ngf = 64
+        img_size = 224
     else:
         raise NotImplementedError
 
-    return ResnetGenerator(3, 3, ngf, norm_type='batch', act_type='relu', mean=mean, std=std, img_size=img_size)
+    return ResnetGenerator(3, 3, ngf=64, norm_type='batch', act_type='relu', mean=mean, std=std, img_size=img_size)

@@ -21,18 +21,17 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--adv', default=True, type=bool)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int)
-parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='awp', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='4', type=str)
+parser.add_argument('--gpu', default='1', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
-parser.add_argument('--patch_size', default=5, type=int, help='4/16/32')
+parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
@@ -116,9 +115,9 @@ def adv_test():
             prog_bar.set_description(desc, refresh=True)
 
             # fast eval
-            # if (key == 'apgd') or (key == 'auto') or (key == 'cw_Linf') or (key == 'cw'):
-            #     if batch_idx >= int(len(testloader) * 0.3):
-            #         break
+            if args.dataset == 'imagenet':
+                if batch_idx >= int(len(testloader) * 0.2):
+                    break
 
 def clean_test():
     net.eval()
@@ -139,11 +138,75 @@ def clean_test():
         desc = ('[Test] Clean: %.2f%%' % (100. * correct / total))
         prog_bar.set_description(desc, refresh=True)
 
+
+def adv_analysis_test():
+    net.eval()
+
+    attack_module = {}
+    # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
+    for attack_name in ['pgd']:
+        args.attack = attack_name
+        if args.dataset == 'imagenet':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/4, steps=args.steps)
+        elif args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/2, steps=args.steps)
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
+
+    for key in attack_module:
+        total = 0
+        adv_correct = 0
+        correct_want1 = 0
+        correct_want2 = 0
+        correct_want3 = 0
+        correct_want4 = 0
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+
+        for batch_idx, (inputs, targets) in prog_bar:
+            inputs, targets = inputs.cuda(), targets.cuda()
+            adv_inputs = attack_module[key](inputs, targets)
+
+            with autocast():
+                output = net(inputs)
+                adv_output = net(adv_inputs)
+            _, predicted = output.max(1)
+            _, adv_predicted = adv_output.max(1)
+
+            want1 = (predicted == targets) * (adv_predicted == targets)
+            want2 = (predicted != targets) * (adv_predicted == targets)
+            want3 = (predicted == targets) * (adv_predicted != targets)
+            want4 = (predicted != targets) * (adv_predicted != targets)
+
+            total += targets.size(0)
+            adv_correct += adv_predicted.eq(targets).sum().item()
+            correct_want1 += want1.sum().item()
+            correct_want2 += want2.sum().item()
+            correct_want3 += want3.sum().item()
+            correct_want4 += want4.sum().item()
+
+
+            desc = ('[Test/%s] Adv: %.4f%%' % (key, 100. * adv_correct / total))
+            prog_bar.set_description(desc, refresh=True)
+
+            # fast eval
+            if args.dataset == 'imagenet':
+                if batch_idx >= int(len(testloader) * 0.2):
+                    break
+        print('------------------------')
+        print('(predictedF == targets) * (adv_predictedF == targets)')
+        print(100. * correct_want1 / total)
+        print('(predictedF != targets) * (adv_predictedF == targets)')
+        print(100. * correct_want2 / total)
+        print('(predictedF == targets) * (adv_predictedF != targets)')
+        print(100. * correct_want3 / total)
+        print('(predictedF != targets) * (adv_predictedF != targets)')
+        print(100. * correct_want4 / total)
+        print('------------------------')
+
+
 def class_num(dataset_name):
     if dataset_name == 'cifar10':
         return 10, 1000
-    elif dataset_name == 'svhn':
-        return 10, 10
     elif dataset_name == 'cifar100':
         return 100
     elif dataset_name == 'tiny':
@@ -216,9 +279,8 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    # set_random(777)
     clean_test()
-    adv_test()
+    if args.base != 'standard': adv_test()
     #measure_adversarial_drift()
 
 
