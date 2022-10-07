@@ -43,8 +43,8 @@ parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
-parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
+parser.add_argument('--epochs', default=10, type=int)
+parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -70,6 +70,9 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
+# make checkpoint folder and set checkpoint name for saving
+if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
+if not os.path.isdir(f'checkpoint/mart'): os.mkdir(f'checkpoint/mart')
 if not os.path.isdir(f'checkpoint/mart/{args.dataset}'): os.mkdir(f'checkpoint/mart/{args.dataset}')
 if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/mart/{args.dataset}/{args.dataset}_mart_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
