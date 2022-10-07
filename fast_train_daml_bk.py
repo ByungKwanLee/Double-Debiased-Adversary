@@ -33,8 +33,8 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -83,6 +83,21 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}{args.depth}_best.t7'
 
+def diff_weights(model, proxy):
+    diff_dict = OrderedDict()
+    model_state_dict = model.state_dict()
+    proxy_state_dict = proxy.state_dict()
+    for (new_k, new_w), (old_k, old_w) in zip(model_state_dict.items(), proxy_state_dict.items()):
+        if len(old_w.size()) <= 1: continue
+        if 'weight' in old_k: diff_dict[old_k] = new_w - old_w
+    return diff_dict
+
+def add_weights(model, diff1, diff2):
+    names_in_diff = diff1.keys()
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if name in names_in_diff:
+                param.add_((diff1[name]+diff2[name])/2)
 
 def train(net, net_proxy, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack):
     optimizer, optimizer_aux,  optimizer_total = optimizer_list
@@ -98,12 +113,11 @@ def train(net, net_proxy, net_aux, trainloader, optimizer_list, lr_scheduler_lis
     total = 0
 
     desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (G) %.2f%% | (F==G) %.2f%%' %
-            (lr_scheduler.get_lr()[0], optimizer_aux.get_lr()[0], 0, 0, 0, 0, 0, 0))
+            (lr_scheduler.get_lr()[0], lr_scheduler_aux.get_lr()[0], 0, 0, 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
 
     for batch_idx, (inputs, targets) in prog_bar:
-
 
         # copy network to network proxy
         net_proxy.load_state_dict(net.state_dict())
@@ -119,7 +133,7 @@ def train(net, net_proxy, net_aux, trainloader, optimizer_list, lr_scheduler_lis
 
 
         # DAML STEP [1]
-        # (1-1): optimizerG init
+        # (1-1): optimizer_aux init
         optimizer_aux.zero_grad()
         with autocast():
             adv_outputs1 = net(adv_inputs1)
@@ -134,12 +148,18 @@ def train(net, net_proxy, net_aux, trainloader, optimizer_list, lr_scheduler_lis
         scaler_aux.step(optimizer_aux)
         scaler_aux.update()
 
-        # (1-2): optimizerF init
+        # (1-2): optimizer init
         optimizer.zero_grad()
         with autocast(): loss = F.cross_entropy(adv_outputs1, targets1)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+
+        # check diff weight from net_proxy to net
+        diff_dict1 = diff_weights(net, net_proxy)
+
+        # copy network proxy (original) to network (modified)
+        net.load_state_dict(net_proxy.state_dict())
 
         # DAML STEP [2]
         # (2): optimizerD init
@@ -148,11 +168,20 @@ def train(net, net_proxy, net_aux, trainloader, optimizer_list, lr_scheduler_lis
             adv_outputs_proxy2 = net_proxy(adv_inputs2)
             outputs_proxy2 = net_proxy(inputs2)
             outputs_aux2 = net_aux(inputs2)
-            loss_total = (outputs_aux2 * (adv_outputs_proxy2-outputs_proxy2)).square().mean()
+            loss_total = F.cross_entropy(outputs_proxy2+outputs_aux2.detach(), targets2)
 
         scaler_total.scale(loss_total).backward()
         scaler_total.step(optimizer)
         scaler_total.update()
+
+        # check diff weight from net_proxy to net
+        diff_dict2 = diff_weights(net_proxy, net)
+
+        # copy network net (original) to net proxy (modified)
+        net_proxy.load_state_dict(net.state_dict())
+
+        # final updating weight
+        add_weights(net, diff_dict1, diff_dict2)
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
@@ -240,7 +269,8 @@ def test(net, net_aux, testloader, attack, rank):
     adv_acc = 100. * correct / total
 
     # compute acc
-    acc = (clean_acc + adv_acc) / 2
+    # acc = (clean_acc + adv_acc) / 2
+    acc = correct_sim
 
     # current accuracy print
     rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{100 * correct_sim / total:.2f}!!', rank)

@@ -64,19 +64,19 @@ netG = netG.cuda()
 
 # setting checkpoint name
 if args.network in ['vit', 'deit']:
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
+    net_checkpoint_name = 'checkpoint/daml/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
                                                                                     args.network, args.tran_type,
                                                                                     args.patch_size, args.img_resize)
 elif args.network == 'swin':
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
+    net_checkpoint_name = 'checkpoint/daml/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
                                                                                             args.network, args.tran_type,
                                                                                             args.patch_size, args.img_resize)
 else:
-    net_checkpoint_name = 'checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    net_checkpoint_name = 'checkpoint/daml/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
 
 # load checkpoint
 netF_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
-netG_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['netG']
+netG_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net_aux']
 checkpoint_module(netF_checkpoint, netF)
 checkpoint_module(netG_checkpoint, netG)
 print(" [*] Loaded network params : %s" %(net_checkpoint_name.split('/')[-1]))
