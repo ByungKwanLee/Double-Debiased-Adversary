@@ -22,14 +22,14 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='awp', type=str)
-parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--gpu', default='1', type=str)
+parser.add_argument('--network', default='deit', type=str)
+parser.add_argument('--depth', default=12, type=int)
+parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--batch_size', default=64, type=float)
+parser.add_argument('--gpu', default='3', type=str)
 
 # transformer parameter
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 
