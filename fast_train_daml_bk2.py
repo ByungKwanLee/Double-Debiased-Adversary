@@ -1,6 +1,9 @@
 # Import built-in module
 import argparse
 import warnings
+
+import torch.nn
+
 warnings.filterwarnings(action='ignore')
 
 # Import torch
@@ -30,7 +33,7 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='DAML', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
@@ -71,7 +74,7 @@ best_acc = 0
 
 # Mix Training
 scaler = GradScaler()
-scaler_aux = GradScaler()
+scaler_logistic = GradScaler()
 scaler_total = GradScaler()
 
 # make checkpoint folder and set checkpoint name for saving
@@ -84,20 +87,20 @@ else:
     saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}{args.depth}_best.t7'
 
 
-def train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack, rank):
-    optimizer, optimizer_aux,  optimizer_total = optimizer_list
-    lr_scheduler, lr_scheduler_aux, lr_scheduler_total = lr_scheduler_list
-    scaler, scaler_aux, scaler_total = scaler_list
+def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack, rank):
+    optimizer, optimizer_logistic,  optimizer_total = optimizer_list
+    lr_scheduler, lr_scheduler_logistic, lr_scheduler_total = lr_scheduler_list
+    scaler, scaler_logistic, scaler_total = scaler_list
 
     net.train()
-    net_aux.train()
+    net_logistic.train()
 
-    train_loss, train_loss_aux, train_loss_total = 0, 0, 0
-    correct, correct_aux, correct_sim = 0, 0, 0
-    total = 0
+    train_loss, train_loss_logistic, train_loss_total = 0, 0, 0
+    correct, correct_logistic, correct_sim1, correct_sim2 = 0, 0, 0, 0
+    total, total_sim1, total_sim2 = 0, 0, 0
 
     desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (G) %.2f%% | (F==G) %.2f%%' %
-            (lr_scheduler.get_lr()[0], lr_scheduler_aux.get_lr()[0], 0, 0, 0, 0, 0, 0))
+            (lr_scheduler.get_lr()[0], lr_scheduler_logistic.get_lr()[0], 0, 0, 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
 
@@ -114,20 +117,23 @@ def train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_l
 
 
         # DAML STEP [1]
-        # (1-1): optimizer_aux init
-        optimizer_aux.zero_grad()
+        # (1-1): optimizer_logistic init
+        optimizer_logistic.zero_grad()
         with autocast():
             adv_outputs1 = net(adv_inputs1)
             outputs1 = net(inputs1)
-            outputs_aux1 = net_aux(inputs1)
+            outputs_logistic1 = net_logistic(inputs1)
 
-            # first lossG: logit difference
-            diff_y = adv_outputs1 - outputs1
-            loss_aux = (outputs_aux1 - diff_y.detach()).square().mean()
+            adv_predicted1 = adv_outputs1.max(1)[1]
+            predicted1 = outputs1.max(1)[1]
 
-        scaler_aux.scale(loss_aux).backward()
-        scaler_aux.step(optimizer_aux)
-        scaler_aux.update()
+            # logistic_target1 = (adv_predicted1 != predicted1).float().view(-1,1)
+            logistic_target1 = (adv_predicted1 != targets1).float().view(-1,1)
+            loss_logistic = torch.nn.BCEWithLogitsLoss()(outputs_logistic1, logistic_target1)
+
+        scaler_logistic.scale(loss_logistic).backward()
+        scaler_logistic.step(optimizer_logistic)
+        scaler_logistic.update()
 
         # (1-2): optimizer init
         optimizer.zero_grad()
@@ -141,8 +147,8 @@ def train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_l
         # optimizer_total.zero_grad()
         # with autocast():
         #     adv_outputs2 = net(adv_inputs2)
-        #     outputs_aux2 = net_aux(inputs2).detach()
-        #     theta = adv_outputs2 * outputs_aux2
+        #     outputs_logistic2 = net_logistic(inputs2).detach()
+        #     theta = adv_outputs2 * outputs_logistic2
         #     loss_total = theta.square().mean()
         # scaler_total.scale(loss_total).backward()
         # scaler_total.step(optimizer)
@@ -150,36 +156,48 @@ def train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_l
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
-        lr_scheduler_aux.step()
+        lr_scheduler_logistic.step()
         lr_scheduler_total.step()
 
         train_loss += loss.item()
-        train_loss_aux += loss_aux.item()
+        train_loss_logistic += loss_logistic.item()
         # train_loss_total += loss_total.item()
 
-        _, predicted1 = adv_outputs1.max(1)
-        _, predicted_aux1 = (outputs1+outputs_aux1).max(1)
+        # for test
+        with autocast():
+            adv_outputs1 = net(adv_inputs1)
+            outputs1 = net(inputs1)
+            outputs_logistic1 = net_logistic(inputs1)
+
+        # logistic regression by sigmoid
+        turn_on = (outputs_logistic1.sigmoid() >= 0.5).int().view(-1)
+        turn_off = 1 - turn_on
+
+        _, adv_predicted1 = adv_outputs1.max(1)
+        _, predicted1 = outputs1.max(1)
+
+        correct_sim1 += ((adv_predicted1 != targets1).int() * turn_on).sum().item()
+        correct_sim2 += ((adv_predicted1 == targets1).int() * turn_off).sum().item()
+        total_sim1 += (adv_predicted1 != targets1).int().sum().item()
+        total_sim2 += (adv_predicted1 == targets1).int().sum().item()
 
         total += targets1.size(0)
         correct += predicted1.eq(targets1).sum().item()
-        correct_aux += predicted_aux1.eq(targets1).sum().item()
-        correct_sim += predicted_aux1.eq(predicted1).sum().item()
 
-        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (G) %.2f%% | (F==G) %.2f%%' %
-                (lr_scheduler.get_lr()[0], lr_scheduler_aux.get_lr()[0], train_loss / (batch_idx + 1), train_loss_aux / (batch_idx + 1),
-                 train_loss_total / (batch_idx + 1), 100. * correct / total, 100. * correct_aux / total, 100. * correct_sim / total))
+        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (adv_pred!=tar) %.2f%% | (adv_pred==tar) %.2f%%' %
+                (lr_scheduler.get_lr()[0], lr_scheduler_logistic.get_lr()[0], train_loss / (batch_idx + 1), train_loss_logistic / (batch_idx + 1),
+                 train_loss_total / (batch_idx + 1), 100. * correct / total, 100. * correct_sim1 / total_sim1, 100. * correct_sim2 / total_sim2))
         prog_bar.set_description(desc, refresh=True)
 
-def test(net, net_aux, testloader, attack, rank):
+def test(net, net_logistic, testloader, attack, rank):
     global best_acc
     net.eval()
-    net_aux.eval()
+    net_logistic.eval()
     test_loss = 0
     correct = 0
     total = 0
-    desc = (f'[Test/Clean] Loss: {test_loss/(0+1):.3f} | Acc: {0:.2f}')
 
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
 
@@ -201,13 +219,14 @@ def test(net, net_aux, testloader, attack, rank):
 
     test_loss = 0
     correct = 0
-    correct_sim = 0
+    correct_sim1 = 0
+    correct_sim2 = 0
+    total_sim1 = 0
+    total_sim2 = 0
     total = 0
 
-    desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%% | (F==G) %.3f%%'
-            % (test_loss / (0 + 1), 0, 0))
 
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
@@ -216,18 +235,28 @@ def test(net, net_aux, testloader, attack, rank):
         with autocast():
             adv_outputs = net(adv_inputs)
             outputs = net(inputs)
-            outputs_aux = net_aux(inputs)
+            outputs_logistic = net_logistic(inputs).view(-1)
             loss = F.cross_entropy(adv_outputs, targets)
+
+        # logistic regression by sigmoid
+        turn_on  =(outputs_logistic.sigmoid() >= 0.5).int().view(-1)
+        turn_off = 1-turn_on
+
+        _, adv_predicted = adv_outputs.max(1)
+        _, predicted = outputs.max(1)
+
+        correct_sim1 += ((adv_predicted != targets).int() * turn_on).sum().item()
+        correct_sim2 += ((adv_predicted == targets).int() * turn_off).sum().item()
+        total_sim1 += (adv_predicted != targets).int().sum().item()
+        total_sim2 += (adv_predicted == targets).int().sum().item()
 
         test_loss += loss.item()
         _, adv_predicted = adv_outputs.max(1)
-        _, predicted_aux = (outputs+outputs_aux).max(1)
         total += targets.size(0)
         correct += adv_predicted.eq(targets).sum().item()
-        correct_sim += predicted_aux.eq(adv_predicted).sum().item()
 
-        desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%% | (F==G) %.3f%%'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, 100 * correct_sim / total))
+        desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%% | (adv_pred!=tar) %.3f%% | (adv_pred==tar) %.3f%%'
+                % (test_loss / (batch_idx + 1), 100. * correct / total, 100 * correct_sim1 / total_sim1, 100 * correct_sim2 / total_sim2))
         prog_bar.set_description(desc, refresh=True)
 
     # Save adv acc.
@@ -235,16 +264,16 @@ def test(net, net_aux, testloader, attack, rank):
 
     # compute acc
     # acc = (clean_acc + adv_acc) / 2
-    acc = correct_sim
+    acc = (correct_sim1 + correct_sim2) / 2
 
     # current accuracy print
-    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{100 * correct_sim / total:.2f}!!', rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{100 * correct_sim1 / total:.2f}/{100 * correct_sim2 / total:.2f}!!', rank)
 
     # saving checkpoint
     if acc > best_acc:
         state = {
             'net': net.state_dict(),
-            'net_aux': net_aux.state_dict(),
+            'net_logistic': net_logistic.state_dict(),
         }
 
         torch.save(state, saving_ckpt_name)
@@ -275,12 +304,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
 
-    # network f aux
-    net_aux = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
+    # network f logistic
+    net_logistic = get_network(network='logistic', depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                        img_size=args.img_resize, patch_size=args.patch_size, pretrain=args.pretrain)
-    net_aux = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net_aux)
-    net_aux = net_aux.to(memory_format=torch.channels_last).cuda()
-    net_aux = torch.nn.parallel.DistributedDataParallel(net_aux, device_ids=[rank], output_device=[rank])
+    net_logistic = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net_logistic)
+    net_logistic = net_logistic.to(memory_format=torch.channels_last).cuda()
+    net_logistic = torch.nn.parallel.DistributedDataParallel(net_logistic, device_ids=[rank], output_device=[rank])
 
     # upsampling for transformer
     upsample = True if args.network in transformer_list else False
@@ -294,11 +323,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
+        # standard
         # pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
         # checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
+        # adv
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+
     net.load_state_dict(checkpoint['net'])
     rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
@@ -321,24 +353,24 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     step_size_up=int(round(args.epochs/15))*len(trainloader),
     step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
-    # optimizer network f aux
-    optimizer_aux = optim.SGD(net_aux.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_scheduler_aux = torch.optim.lr_scheduler.CyclicLR(optimizer_aux, base_lr=0, max_lr=args.learning_rate,
+    # optimizer network f logistic
+    optimizer_logistic = optim.SGD(net_logistic.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_scheduler_logistic = torch.optim.lr_scheduler.CyclicLR(optimizer_logistic, base_lr=0, max_lr=args.learning_rate,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))
 
     # optimizer network D
-    params = list(net.parameters()) + list(net_aux.parameters())
+    params = list(net.parameters()) + list(net_logistic.parameters())
     optimizer_total = optim.SGD(params, lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler_total = torch.optim.lr_scheduler.CyclicLR(optimizer_total, base_lr=0, max_lr=args.learning_rate,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))
 
-    optimizer_list = [optimizer, optimizer_aux, optimizer_total]
-    lr_scheduler_list = [lr_scheduler, lr_scheduler_aux, lr_scheduler_total]
-    scaler_list = [scaler, scaler_aux, scaler_total]
+    optimizer_list = [optimizer, optimizer_logistic, optimizer_total]
+    lr_scheduler_list = [lr_scheduler, lr_scheduler_logistic, lr_scheduler_total]
+    scaler_list = [scaler, scaler_logistic, scaler_total]
 
     for epoch in range(args.epochs):
         rprint(f'\nEpoch: {epoch+1}', rank)
@@ -350,8 +382,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack, rank)
-        test(net, net_aux, testloader, attack, rank)
+        train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack, rank)
+        test(net, net_logistic, testloader, attack, rank)
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)

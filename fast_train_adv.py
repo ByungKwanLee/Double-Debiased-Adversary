@@ -29,9 +29,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int) # 12 for vit
+parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=34, type=int) # 12 for vit
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
@@ -45,7 +45,7 @@ parser.add_argument('--pretrain', default=True, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=0.1, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -238,6 +238,11 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     elif args.dataset == 'tiny':
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
+
+        rprint('PGD and FGSM MIX training', rank)
+        pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps/2, steps=args.steps)
+        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
+        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)

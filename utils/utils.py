@@ -235,6 +235,39 @@ def kld_loss(q, p):
 # snow__4 = torchvision.datasets.ImageFolder('/mnt/hard1/jh_datasets/imagenet-c/weather/snow/4')
 # snow__5 = torchvision.datasets.ImageFolder('/mnt/hard1/jh_datasets/imagenet-c/weather/snow/5')
 
+# mixattack for tiny-imagenet
+class MixAttack(object):
+    def __init__(self, net, slowattack, fastattack, train_iters):
+        self.net = net
+        self.slowattack = slowattack
+        self.fastattack = fastattack
+        self.train_iters = train_iters
+        self.ratio = 0.3
+        self.current_iter = 0
+
+    def __call__(self, inputs, targets):
+        # training
+        if self.net.training:
+            adv_inputs = self.slowattack(inputs, targets) \
+                if self._iter < self.train_iters * self.ratio else self.fastattack(inputs, targets)
+            self.iter()
+            self.check()
+        # testing
+        else:
+            adv_inputs = self.fastattack(inputs, targets)
+        return adv_inputs
+
+    def iter(self):
+        self.current_iter = self.current_iter+1
+
+    def check(self):
+        if self.train_iters == self.current_iter:
+            self.current_iter = 0
+
+    @property
+    def _iter(self):
+        return self.current_iter
+
 
 # attack loader
 from attack.fastattack import attack_loader
