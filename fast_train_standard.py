@@ -30,14 +30,14 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
-parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='tnt', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='deit', type=str)
 parser.add_argument('--depth', default=12, type=int, help='cait depth = 24')
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12358", type=str)
 
 # transformer parameter
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--img_resize', default=224, type=int, help='32/224')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16')
 parser.add_argument('--warmup-steps', default=500, type=int)
@@ -46,7 +46,7 @@ parser.add_argument('--pretrain', default=True, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=3e-2, type=float) #1e-4 for ViT 3e-2
+parser.add_argument('--learning_rate', default=1e-2, type=float) #1e-4 for ViT 3e-2
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -190,15 +190,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint(f'==> {pretrain_ckpt_name}', rank)
         rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
-    # if args.network in transformer_list:
-    #     t_total = args.num_steps
-    #     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    #     lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
-    # else:
-    optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=int(round(args.epochs/15))*len(trainloader),
-    step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
+    if args.network in transformer_list:
+        t_total = args.num_steps
+        optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
+    else:
+        optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+        lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+        step_size_up=int(round(args.epochs/15))*len(trainloader),
+        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
     # training and testing
     for epoch in range(args.epochs):

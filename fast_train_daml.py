@@ -13,7 +13,6 @@ from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
 from utils.scheduler import WarmupCosineSchedule
 from models.generator import weights_init
-from tensorboardX import SummaryWriter
 
 # attack loader
 # from attack.attack import attack_loader
@@ -39,17 +38,14 @@ parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
-parser.add_argument('--img_resize', default=32, type=int, help='32/224')
+parser.add_argument('--img_resize', default=224, type=int, help='32/224')
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
-parser.add_argument('--epochs', default=100, type=int)
-parser.add_argument('--f_lr', default=0.1, type=float) #3e-2 for ViT
-parser.add_argument('--g_lr', default=0.002, type=float) #for generator
-parser.add_argument('--d_lr', default=0.01, type=float) #for generator
-parser.add_argument('--beta1', default=0.5, type=float) #for generator
+parser.add_argument('--epochs', default=10, type=int)
+parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -74,34 +70,39 @@ os.environ['MASTER_PORT'] = args.port
 best_acc = 0
 
 # Mix Training
-scalerF = GradScaler()
-scalerG = GradScaler()
-scalerD = GradScaler()
+scaler = GradScaler()
+scaler_aux = GradScaler()
+scaler_total = GradScaler()
 
-counter = 0
-log_dir = './logs'
-check_dir(log_dir)
+# make checkpoint folder and set checkpoint name for saving
+if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
+if not os.path.isdir(f'checkpoint/daml'): os.mkdir(f'checkpoint/daml')
+if not os.path.isdir(f'checkpoint/daml/{args.dataset}'): os.mkdir(f'checkpoint/daml/{args.dataset}')
+if args.network in transformer_list:
+    saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+else:
+    saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}{args.depth}_best.t7'
 
-def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer):
-    global counter
-    optimizerF, optimizerG, optimizerD = optimizer
-    lr_schedulerF, lr_schedulerG, lr_schedulerD = lr_scheduler
-    scalerF, scalerG, scalerD = scaler
+
+def train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack):
+    optimizer, optimizer_aux,  optimizer_total = optimizer_list
+    lr_scheduler, lr_scheduler_aux, lr_scheduler_total = lr_scheduler_list
+    scaler, scaler_aux, scaler_total = scaler_list
 
     net.train()
-    netG.train()
-    train_lossF, train_lossG, train_lossD = 0, 0, 0
-    correctF, correctG, correct = 0, 0, 0
+    net_aux.train()
+
+    train_loss, train_loss_aux, train_loss_total = 0, 0, 0
+    correct, correct_aux, correct_sim = 0, 0, 0
     total = 0
 
-    softmax = torch.nn.Softmax(dim=-1)
-
-    desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccFG: %.2f%%/%.2f%%/%.2f%%  (%d/%d/%d/%d)' %
-            (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], 0, 0, 0, 0, 0, 0, correct, correctF, correctG, total))
+    desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (G) %.2f%% | (F==G) %.2f%%' %
+            (lr_scheduler.get_lr()[0], optimizer_aux.get_lr()[0], 0, 0, 0, 0, 0, 0))
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
 
     for batch_idx, (inputs, targets) in prog_bar:
+        # input setting
         inputs, targets = inputs.cuda(), targets.cuda()
         adv_inputs = attack(inputs, targets)
 
@@ -110,132 +111,72 @@ def train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank,
         adv_inputs1, adv_inputs2 = adv_inputs.split(args.batch_size // 2)
         targets1, targets2 = targets.split(args.batch_size//2)
 
-        # Accelerating forward propagation
-        optimizerF.zero_grad()
-
+        # DAML STEP [1]
+        # (1-1): optimizerG init
+        optimizer_aux.zero_grad()
         with autocast():
-            outputsF = net(adv_inputs1)
-            lossF = F.cross_entropy(outputsF, targets1)
+            adv_outputs1 = net(adv_inputs1)
+            outputs1 = net(inputs1)
+            outputs_aux1 = net_aux(inputs1)
 
-        # Accelerating backward propagation
-        scalerF.scale(lossF).backward()
-        scalerF.step(optimizerF)
-        scalerF.update()
+            # first lossG: logit difference
+            diff_y = adv_outputs1 - outputs1
+            loss_aux = (outputs_aux1 - diff_y.detach()).square().mean()
 
-        optimizerG.zero_grad()
+        scaler_aux.scale(loss_aux).backward()
+        scaler_aux.step(optimizer_aux)
+        scaler_aux.update()
+
+        # (1-2): optimizerF init
+        optimizer.zero_grad()
+        with autocast(): loss = F.cross_entropy(adv_outputs1, targets1)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        # DAML STEP [2]
+        # (2): optimizerD init
+        optimizer_total.zero_grad()
         with autocast():
-            # outputsG_ = netG(2 * inputs1 - 1)
-            # n_outputsG = normalize_clip(outputsG_.clone(), args.eps)
-            #
-            # outputsG_ = outputsG_ * n_outputsG
-            # out_img1 = inputs1 + outputsG_
-            # out_img1.clamp_(0, 1)
-            #
-            # outputsG = net(out_img1)
-            #
-            # lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
-            #lossG = -1. * F.cross_entropy(outputsG, targets1)
+            adv_outputs_proxy2 = net(adv_inputs2)
+            outputs_proxy2 = net(inputs2)
+            outputs_aux2 = net_aux(inputs2)
+            loss_total = (outputs_aux2 * (adv_outputs_proxy2-outputs_proxy2)).square().mean()
 
-            outputsG_, latentG = netG(2 * inputs1 - 1)
-            n_outputsG = normalize_clip(outputsG_.clone(), args.eps)
-
-            outputsG_ = outputsG_ * n_outputsG
-            out_img1 = inputs1 + outputsG_
-            out_img1.clamp_(0, 1)
-
-            outputsG = net(out_img1)
-
-            ce_g = F.cross_entropy(latentG, targets1)
-
-            lossG = kld_loss(softmax(outputsG), softmax(outputsF.detach()))
-
-        scalerG.scale(lossG).backward()
-        scalerG.step(optimizerG)
-        scalerG.update()
-
-        optimizerD.zero_grad()
-
-        with autocast():
-            adv_out = net(adv_inputs2)
-            outputsD_ = inputs2 + netG(2 * inputs2 - 1)
-            outputsD_.clamp_(0, 1)
-            gen_out = net(outputsD_)
-            #clean_out = softmax(net(inputs2))
-            loss = torch.nn.CrossEntropyLoss()
-
-            onehot_target2 = get_onehot(adv_out, targets2)
-            #v_f = kld_loss(adv_out, gen_out)
-            v_f = loss(gen_out, softmax(adv_out))
-            u = F.cross_entropy(net(inputs2), targets2) - v_f
-
-            # u = onehot_target2 - clean_out - adv_out + gen_out # B X C
-            # v_f = adv_out - gen_out # B X C
-            #
-            # norm_u = (u - u.mean(1).unsqueeze(-1)) / u.std(1).unsqueeze(-1)
-            # norm_vf = (v_f - v_f.mean(1).unsqueeze(-1)) / v_f.std(1).unsqueeze(-1)
-            #
-            #
-            # # norm_vf = (v_f - torch.min(v_f, -1)[0].unsqueeze(-1)) / (torch.max(v_f, -1)[0].unsqueeze(-1) - torch.min(v_f, -1)[0].unsqueeze(-1))
-            # v = (adv_inputs2 - outputsD_).reshape(int(args.batch_size / 2), -1) # B X HWC
-            # u_loss = (((u.T @ u) - (u.T @ u).diag().diag()) ** 2).mean()
-            # v_loss = (((v.T @ v) - (v.T @ v).diag().diag()) ** 2).mean()
-            #
-            # # mc_loss = (v_f @ u.T @ u @ v_f.T).trace() / (args.batch_size / 2)
-            # mc_loss = (norm_vf @ norm_u.T @ norm_u @ norm_vf.T).trace() / (args.batch_size / 2)
-
-            mc_loss = (u * v_f) ** 2
-
-            lossD = mc_loss# + u_loss + 0.01 * v_loss
-
-        scalerD.scale(lossD).backward()
-        scalerD.step(optimizerD)
-        scalerD.update()
+        scaler_total.scale(loss_total).backward()
+        scaler_total.step(optimizer)
+        scaler_total.update()
 
         # scheduling for Cyclic LR
-        lr_schedulerF.step()
-        lr_schedulerG.step()
-        lr_schedulerD.step()
+        lr_scheduler.step()
+        lr_scheduler_aux.step()
+        lr_scheduler_total.step()
 
-        if rank == 0:
-            writer.add_scalar('Train_Loss/lossF', lossF, counter)
-            writer.add_scalar('Train_Loss/lossG', lossG, counter)
-            writer.add_scalar('Train_Loss/lossD', lossD, counter)
-            writer.add_scalar('Train_Loss/mc_loss', mc_loss, counter)
-            # writer.add_scalar('Train_Loss/u_loss', u_loss, counter)
-            # writer.add_scalar('Train_Loss/v_loss', v_loss, counter)
+        train_loss += loss.item()
+        train_loss_aux += loss_aux.item()
+        train_loss_total += loss_total.item()
 
-            writer.add_scalar('lr/f_lr', lr_schedulerF.get_last_lr()[0], counter)
-            writer.add_scalar('lr/g_lr', lr_schedulerG.get_last_lr()[0], counter)
-            writer.add_scalar('lr/d_lr', lr_schedulerD.get_last_lr()[0], counter)
-
-            counter += 1
-
-        train_lossF += lossF.item()
-        train_lossG += lossG.item()
-        train_lossD += mc_loss.item()
-
-        _, predictedF = outputsF.max(1)
-        _, predictedG = outputsG.max(1)
+        _, predicted1 = adv_outputs1.max(1)
+        _, predicted_aux1 = (outputs1+outputs_aux1).max(1)
 
         total += targets1.size(0)
-        correctF += predictedF.eq(targets1).sum().item()
-        correctG += predictedG.eq(targets1).sum().item()
-        correct += predictedG.eq(predictedF).sum().item()
+        correct += predicted1.eq(targets1).sum().item()
+        correct_aux += predicted_aux1.eq(targets1).sum().item()
+        correct_sim += predicted_aux1.eq(predicted1).sum().item()
 
-        desc = ('[Tr/lrFG=%.3f/%.3f] LossFGD: %.3f | %.3f | %.3f | AccF/G: %.2f%%/%.2f%%/%.2f%%  (%d/%d/%d/%d)' %
-                (lr_schedulerF.get_lr()[0], lr_schedulerG.get_lr()[0], train_lossF / (batch_idx + 1), train_lossG / (batch_idx + 1),
-                 train_lossD / (batch_idx + 1), 100. * correctF / total, 100. * correctG / total, 100. * correct / total, correct, correctF, correctG, total))
+        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (G) %.2f%% | (F==G) %.2f%%' %
+                (lr_scheduler.get_lr()[0], lr_scheduler_aux.get_lr()[0], train_loss / (batch_idx + 1), train_loss_aux / (batch_idx + 1),
+                 train_loss_total / (batch_idx + 1), 100. * correct / total, 100. * correct_aux / total, 100. * correct_sim / total))
         prog_bar.set_description(desc, refresh=True)
 
-def test(net, netG, testloader, attack, rank):
+def test(net, net_aux, testloader, attack, rank):
     global best_acc
     net.eval()
-    netG.eval()
+    net_aux.eval()
     test_loss = 0
     correct = 0
     total = 0
-    desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss/(0+1), 0, correct, total))
+    desc = (f'[Test/Clean] Loss: {test_loss/(0+1):.3f} | Acc: {0:.2f}')
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
@@ -251,8 +192,7 @@ def test(net, netG, testloader, attack, rank):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        desc = ('[Test/Clean] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = (f'[Test/Clean] Loss: {test_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
         prog_bar.set_description(desc, refresh=True)
 
     # Save clean acc.
@@ -260,68 +200,57 @@ def test(net, netG, testloader, attack, rank):
 
     test_loss = 0
     correct = 0
+    correct_sim = 0
     total = 0
 
-    desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (test_loss / (0 + 1), 0, correct, total))
+    desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%% | (F==G) %.3f%%'
+            % (test_loss / (0 + 1), 0, 0))
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs = attack(inputs, targets)
         inputs, targets = inputs.cuda(), targets.cuda()
+        adv_inputs = attack(inputs, targets)
 
         # Accerlating forward propagation
         with autocast():
+            adv_outputs = net(adv_inputs)
             outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets)
+            outputs_aux = net_aux(inputs)
+            loss = F.cross_entropy(adv_outputs, targets)
 
         test_loss += loss.item()
-        _, predicted = outputs.max(1)
+        _, adv_predicted = adv_outputs.max(1)
+        _, predicted_aux = (outputs+outputs_aux).max(1)
         total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        correct += adv_predicted.eq(targets).sum().item()
+        correct_sim += predicted_aux.eq(adv_predicted).sum().item()
 
-        desc = ('[Test/PGD] Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%% | (F==G) %.3f%%'
+                % (test_loss / (batch_idx + 1), 100. * correct / total, 100 * correct_sim / total))
         prog_bar.set_description(desc, refresh=True)
 
     # Save adv acc.
     adv_acc = 100. * correct / total
 
     # compute acc
-    acc = (clean_acc + adv_acc)/2
+    acc = (clean_acc + adv_acc) / 2
 
-    rprint('Current Accuracy is {:.2f}/{:.2f}!!'.format(clean_acc, adv_acc), rank)
+    # current accuracy print
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{100 * correct_sim / total:.2f}!!', rank)
 
+    # saving checkpoint
     if acc > best_acc:
         state = {
             'net': net.state_dict(),
+            'net_aux': net_aux.state_dict(),
         }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        if not os.path.isdir('checkpoint/pretrain'):
-            os.mkdir('checkpoint/pretrain')
 
+        torch.save(state, saving_ckpt_name)
+        rprint(f'Saving~ {saving_ckpt_name}', rank)
+
+        # update best acc
         best_acc = acc
-        if rank == 0:
-            if args.network in transformer_list:
-                torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                args.network, args.tran_type,
-                                                                                                args.patch_size, args.img_resize))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                            args.network, args.tran_type,
-                                                                                            args.patch_size, args.img_resize))
-            elif args.network == 'swin':
-                torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                        args.network, args.tran_type,
-                                                                                                        args.patch_size, args.img_resize))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                                    args.network, args.tran_type,
-                                                                                                    args.patch_size, args.img_resize))
-            else:
-                torch.save(state, './checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                                    args.network, args.depth))
-                print('Saving~ ./checkpoint/pretrain/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset,
-                                                                                args.network, args.depth))
+
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # print configuration
@@ -331,9 +260,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     torch.cuda.set_device(rank)
 
     # DDP environment settings
-    print("Use GPU: {} for training".format(gpu_list[rank]))
+    print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
+    # network f
     # init model and Distributed Data Parallel
     net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                       img_size=args.img_resize, patch_size=args.patch_size, pretrain=args.pretrain)
@@ -341,12 +271,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
-    netG = get_network(network='gen', depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
+    # network f aux
+    net_aux = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                        img_size=args.img_resize, patch_size=args.patch_size, pretrain=args.pretrain)
-    netG.apply(weights_init)
-    netG = torch.nn.SyncBatchNorm.convert_sync_batchnorm(netG)
-    netG = netG.to(memory_format=torch.channels_last).cuda()
-    netG = torch.nn.parallel.DistributedDataParallel(netG, device_ids=[rank], output_device=[rank])
+    net_aux = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net_aux)
+    net_aux = net_aux.to(memory_format=torch.channels_last).cuda()
+    net_aux = torch.nn.parallel.DistributedDataParallel(net_aux, device_ids=[rank], output_device=[rank])
 
     # upsampling for transformer
     upsample = True if args.network in transformer_list else False
@@ -355,23 +285,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset, train_batch_size=args.batch_size,
                                                            test_batch_size=args.test_batch_size, upsample=upsample)
 
-    # Load Plain Network
+    # Load ADV Network
     if args.network in transformer_list:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                      args.network, args.tran_type,
-                                                                                      args.patch_size, args.img_resize)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-    elif args.network == 'swin':
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                              args.network, args.tran_type,
-                                                                                              args.patch_size, args.img_resize)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        checkpoint_name = 'checkpoint/pretrain/%s/%s_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
-        checkpoint = torch.load(checkpoint_name, map_location=torch.device(torch.cuda.current_device()))
-
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {checkpoint_name}', rank)
+    rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
@@ -386,51 +308,43 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
 
     # init optimizer and lr scheduler
-    if args.network in transformer_list:
-        t_total = args.num_steps
-        optimizerF = optim.SGD(net.parameters(), lr=args.f_lr, momentum=0.9, weight_decay=args.weight_decay)
-        lr_schedulerF = WarmupCosineSchedule(optimizerF, warmup_steps=args.warmup_steps, t_total=t_total)
-    else:
-        optimizerF = optim.SGD(net.parameters(), lr=args.f_lr, momentum=0.9, weight_decay=args.weight_decay)
-        lr_schedulerF = torch.optim.lr_scheduler.CyclicLR(optimizerF, base_lr=0, max_lr=args.f_lr,
-        step_size_up=int(round(args.epochs/15))*len(trainloader),
-        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
+    # optimizer network f
+    optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+    step_size_up=int(round(args.epochs/15))*len(trainloader),
+    step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
 
-    optimizerG = optim.SGD(netG.parameters(), lr=args.g_lr, momentum=0.9, weight_decay=args.weight_decay)
-    lr_schedulerG = torch.optim.lr_scheduler.CyclicLR(optimizerG, base_lr=0, max_lr=args.g_lr,
+    # optimizer network f aux
+    optimizer_aux = optim.SGD(net_aux.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_scheduler_aux = torch.optim.lr_scheduler.CyclicLR(optimizer_aux, base_lr=0, max_lr=args.learning_rate,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))
 
-    params = list(net.parameters()) + list(netG.parameters())
-    optimizerD = optim.SGD(params, lr=args.d_lr, momentum=0.9, weight_decay=args.weight_decay)
-    lr_schedulerD = torch.optim.lr_scheduler.CyclicLR(optimizerD, base_lr=0, max_lr=args.d_lr,
+    # optimizer network D
+    params = list(net.parameters()) + list(net_aux.parameters())
+    optimizer_total = optim.SGD(params, lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_scheduler_total = torch.optim.lr_scheduler.CyclicLR(optimizer_total, base_lr=0, max_lr=args.learning_rate,
                                                       step_size_up=int(round(args.epochs / 15)) * len(trainloader),
                                                       step_size_down=args.epochs * len(trainloader) - int(
                                                           round(args.epochs / 15)) * len(trainloader))
 
-    # optimizerG = optim.Adam(netG.parameters(), lr=args.G_learning_rate, betas=(args.beta1, 0.999))
-    # lr_schedulerG = torch.optim.lr_scheduler.MultiStepLR(optimizerG, milestones=[10, 20, 30], gamma=0.5)
-
-    writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
-    # training and testing
-
-    optimizer = [optimizerF, optimizerG, optimizerD]
-    lr_scheduler = [lr_schedulerF, lr_schedulerG, lr_schedulerD]
-    scaler = [scalerF, scalerG, scalerD]
+    optimizer_list = [optimizer, optimizer_aux, optimizer_total]
+    lr_scheduler_list = [lr_scheduler, lr_scheduler_aux, lr_scheduler_total]
+    scaler_list = [scaler, scaler_aux, scaler_total]
 
     for epoch in range(args.epochs):
-        rprint('\nEpoch: %d' % (epoch+1), rank)
+        rprint(f'\nEpoch: {epoch+1}', rank)
         if args.dataset == "imagenet":
             if args.network in transformer_list:
-                res = 224
+                res = args.img_resize
             else:
                 res = get_resolution(epoch=epoch, min_res=160, max_res=192,
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, netG, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer)
-        test(net, netG, testloader, attack, rank)
+        train(net, net_aux, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack)
+        test(net, net_aux, testloader, attack, rank)
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
