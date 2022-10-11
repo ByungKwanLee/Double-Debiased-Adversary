@@ -32,9 +32,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--NAME', default='STANDARD', type=str)
 parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=34, type=int, help='cait depth = 24')
+parser.add_argument('--depth', default=70, type=int, help='cait depth = 24')
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12358", type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge//xxs/s')
