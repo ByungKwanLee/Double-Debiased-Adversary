@@ -36,7 +36,7 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
@@ -95,7 +95,7 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
     net.train()
     net_logistic.train()
 
-    train_loss, train_loss_logistic, train_loss_theta = 0, 0, 0
+    train_loss, train_loss_logistic, train_loss_theta= 0, 0, 0
     correct, correct_logistic, correct_sim1, correct_sim2 = 0, 0, 0, 0
     total, total_sim1, total_sim2 = 0, 0, 0
 
@@ -148,12 +148,19 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
 
+            l_adv = F.cross_entropy(adv_outputs2, targets2, reduction='none')
+            l_nat = F.cross_entropy(outputs2, targets2, reduction='none')
+
             theta1 = (adv_outputs2.softmax(dim=1) * ((adv_outputs2.softmax(dim=1)+1e-3).log() - (outputs2.softmax(dim=1)+1e-3).log())).sum(dim=1)
-            theta2 = 1/(adv_outputs2.softmax(dim=1)[:, targets2]+1e-3) * F.cross_entropy(adv_outputs2, targets2, reduction='none') \
-                     - 1/(1-adv_outputs2.softmax(dim=1)[:, targets2]+1e-3) * F.cross_entropy(outputs2, targets2, reduction='none')
-            # theta2 = F.cross_entropy(adv_outputs2, targets2, reduction='none') \
-            #          - F.cross_entropy(outputs2, targets2, reduction='none')
-            theta = theta1 + theta2
+
+            # first theta2
+            theta2 = 1/(adv_outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(adv_outputs2, targets2, reduction='none') \
+                     - 1/(1-adv_outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(outputs2, targets2, reduction='none')
+
+            # second theta2
+            theta2 = l_adv - l_nat
+
+            theta = theta1 + theta2.abs()
             loss_theta = theta.mean()
 
         scaler_total.scale(loss_theta).backward()
@@ -177,9 +184,9 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
         total += targets1.size(0)
         correct += predicted1.eq(targets1).sum().item()
 
-        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (theta) %.3f | Acc: (F) %.2f%%' %
+        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (theta) %.3f | Acc: (F) %.2f%% | l_adv/l_nat: %.2f%%' %
                 (lr_scheduler.get_lr()[0], lr_scheduler_logistic.get_lr()[0], train_loss / (batch_idx + 1), train_loss_logistic / (batch_idx + 1),
-                 train_loss_theta / (batch_idx + 1), 100. * correct / total))
+                 train_loss_theta / (batch_idx + 1), 100. * correct / total, l_adv.mean().item()/l_nat.mean().item()))
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, net_logistic, testloader, attack, rank):
