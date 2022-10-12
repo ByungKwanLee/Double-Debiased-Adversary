@@ -36,7 +36,7 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
@@ -95,15 +95,12 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
     net.train()
     net_logistic.train()
 
-    train_loss, train_loss_logistic, train_loss_total = 0, 0, 0
+    train_loss, train_loss_logistic, train_loss_theta= 0, 0, 0
     correct, correct_logistic, correct_sim1, correct_sim2 = 0, 0, 0, 0
     total, total_sim1, total_sim2 = 0, 0, 0
 
-    desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (G) %.2f%% | (F==G) %.2f%%' %
-            (lr_scheduler.get_lr()[0], lr_scheduler_logistic.get_lr()[0], 0, 0, 0, 0, 0, 0))
 
-    prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
-
+    prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
 
         # input setting
@@ -118,26 +115,28 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
 
         # DAML STEP [1]
         # (1-1): optimizer_logistic init
-        optimizer_logistic.zero_grad()
-        with autocast():
-            adv_outputs1 = net(adv_inputs1)
-            outputs1 = net(inputs1)
-            outputs_logistic1 = net_logistic(inputs1)
-
-            adv_predicted1 = adv_outputs1.max(1)[1]
-            predicted1 = outputs1.max(1)[1]
-
-            # logistic_target1 = (adv_predicted1 != predicted1).float().view(-1,1)
-            logistic_target1 = (adv_predicted1 != targets1).float().view(-1,1)
-            loss_logistic = torch.nn.BCEWithLogitsLoss()(outputs_logistic1, logistic_target1)
-
-        scaler_logistic.scale(loss_logistic).backward()
-        scaler_logistic.step(optimizer_logistic)
-        scaler_logistic.update()
+        # optimizer_logistic.zero_grad()
+        # with autocast():
+        #     adv_outputs1 = net(adv_inputs1)
+        #     outputs1 = net(inputs1)
+        #     outputs_logistic1 = net_logistic(inputs1)
+        #
+        #     adv_predicted1 = adv_outputs1.max(1)[1]
+        #     predicted1 = outputs1.max(1)[1]
+        #
+        #     # logistic_target1 = (adv_predicted1 != predicted1).float().view(-1,1)
+        #     logistic_target1 = (adv_predicted1 != targets1).float().view(-1,1)
+        #     loss_logistic = torch.nn.BCEWithLogitsLoss()(outputs_logistic1, logistic_target1)
+        #
+        # scaler_logistic.scale(loss_logistic).backward()
+        # scaler_logistic.step(optimizer_logistic)
+        # scaler_logistic.update()
 
         # (1-2): optimizer init
         optimizer.zero_grad()
-        with autocast(): loss = F.cross_entropy(adv_outputs1, targets1)
+        with autocast():
+            adv_outputs1 = net(adv_inputs1)
+            loss = F.cross_entropy(adv_outputs1, targets1)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -148,53 +147,46 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
         with autocast():
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
-            outputs_logistic2 = net_logistic(inputs2).detach()
 
-            logistic_target1 = (adv_predicted1 != targets1).float()
-            p=(outputs_logistic2.sigmoid() >= 0.5).float()
+            l_adv = F.cross_entropy(adv_outputs2, targets2, reduction='none')
+            l_nat = F.cross_entropy(outputs2, targets2, reduction='none')
+
             theta1 = (adv_outputs2.softmax(dim=1) * ((adv_outputs2.softmax(dim=1)+1e-3).log() - (outputs2.softmax(dim=1)+1e-3).log())).sum(dim=1)
-            theta2 = logistic_target1 * p * F.cross_entropy(adv_outputs2, targets2, reduction='none') \
-                     - (1-logistic_target1) * (1-p) * F.cross_entropy(outputs2, targets2, reduction='none')
-            theta = theta1 + theta2
-            loss_total = theta.mean()
 
-        scaler_total.scale(loss_total).backward()
+            # first theta2
+            theta2 = 1/(adv_outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(adv_outputs2, targets2, reduction='none') \
+                     - 1/(1-outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(outputs2, targets2, reduction='none')
+
+            # second theta2
+            # theta2 = l_adv - l_nat
+
+            theta = theta1 + theta2.abs()
+            loss_theta = theta.mean()
+
+        scaler_total.scale(loss_theta).backward()
         scaler_total.step(optimizer)
         scaler_total.update()
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
-        lr_scheduler_logistic.step()
         lr_scheduler_total.step()
 
         train_loss += loss.item()
-        train_loss_logistic += loss_logistic.item()
-        train_loss_total += loss_total.item()
+        train_loss_theta += loss_theta.item()
 
         # for test
         with autocast():
             adv_outputs1 = net(adv_inputs1)
             outputs1 = net(inputs1)
-            outputs_logistic1 = net_logistic(inputs1)
-
-        # logistic regression by sigmoid
-        turn_on = (outputs_logistic1.sigmoid() >= 0.5).int().view(-1)
-        turn_off = 1 - turn_on
-
         _, adv_predicted1 = adv_outputs1.max(1)
         _, predicted1 = outputs1.max(1)
-
-        correct_sim1 += ((adv_predicted1 != targets1).int() * turn_on).sum().item()
-        correct_sim2 += ((adv_predicted1 == targets1).int() * turn_off).sum().item()
-        total_sim1 += (adv_predicted1 != targets1).int().sum().item()
-        total_sim2 += (adv_predicted1 == targets1).int().sum().item()
 
         total += targets1.size(0)
         correct += predicted1.eq(targets1).sum().item()
 
-        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (D) %.3f | Acc: (F) %.2f%% | (adv_pred!=tar) %.2f%% | (adv_pred==tar) %.2f%%' %
+        desc = ('[Tr/lrFG=%.3f/%.3f] Loss: (F) %.3f | (G) %.3f | (theta) %.3f | Acc: (F) %.2f%% | l_adv/l_nat: %.2f%%' %
                 (lr_scheduler.get_lr()[0], lr_scheduler_logistic.get_lr()[0], train_loss / (batch_idx + 1), train_loss_logistic / (batch_idx + 1),
-                 train_loss_total / (batch_idx + 1), 100. * correct / total, 100. * correct_sim1 / total_sim1, 100. * correct_sim2 / total_sim2))
+                 train_loss_theta / (batch_idx + 1), 100. * correct / total, l_adv.mean().item()/l_nat.mean().item()))
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, net_logistic, testloader, attack, rank):
@@ -227,10 +219,6 @@ def test(net, net_logistic, testloader, attack, rank):
 
     test_loss = 0
     correct = 0
-    correct_sim1 = 0
-    correct_sim2 = 0
-    total_sim1 = 0
-    total_sim2 = 0
     total = 0
 
 
@@ -243,39 +231,27 @@ def test(net, net_logistic, testloader, attack, rank):
         with autocast():
             adv_outputs = net(adv_inputs)
             outputs = net(inputs)
-            outputs_logistic = net_logistic(inputs).view(-1)
             loss = F.cross_entropy(adv_outputs, targets)
-
-        # logistic regression by sigmoid
-        turn_on  =(outputs_logistic.sigmoid() >= 0.5).int().view(-1)
-        turn_off = 1-turn_on
-
         _, adv_predicted = adv_outputs.max(1)
         _, predicted = outputs.max(1)
-
-        correct_sim1 += ((adv_predicted != targets).int() * turn_on).sum().item()
-        correct_sim2 += ((adv_predicted == targets).int() * turn_off).sum().item()
-        total_sim1 += (adv_predicted != targets).int().sum().item()
-        total_sim2 += (adv_predicted == targets).int().sum().item()
 
         test_loss += loss.item()
         _, adv_predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += adv_predicted.eq(targets).sum().item()
 
-        desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%% | (adv_pred!=tar) %.3f%% | (adv_pred==tar) %.3f%%'
-                % (test_loss / (batch_idx + 1), 100. * correct / total, 100 * correct_sim1 / total_sim1, 100 * correct_sim2 / total_sim2))
+        desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%%'
+                % (test_loss / (batch_idx + 1), 100. * correct / total))
         prog_bar.set_description(desc, refresh=True)
 
     # Save adv acc.
     adv_acc = 100. * correct / total
 
     # compute acc
-    # acc = (clean_acc + adv_acc) / 2
-    acc = (correct_sim1 + correct_sim2) / 2
+    acc = (clean_acc + adv_acc) / 2
 
     # current accuracy print
-    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{100 * correct_sim1 / total:.2f}/{100 * correct_sim2 / total:.2f}!!', rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
 
     # saving checkpoint
     if acc > best_acc:

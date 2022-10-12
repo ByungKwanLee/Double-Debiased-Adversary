@@ -35,7 +35,6 @@ parser.add_argument('--network', default='tnt', type=str)
 parser.add_argument('--depth', default=12, type=int, help='cait depth = 24')
 parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default="12358", type=str)
-
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--img_resize', default=224, type=int, help='32/224')
