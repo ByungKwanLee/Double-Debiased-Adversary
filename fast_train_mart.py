@@ -79,6 +79,13 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/mart/{args.dataset}/{args.dataset}_mart_{args.network}{args.depth}_best.t7'
 
+# Load ADV Network
+if args.network in transformer_list:
+    pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+    checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+else:
+    pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+    checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     net.train()
@@ -223,21 +230,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    # load checkpoint
+    net.load_state_dict(checkpoint['net'])
+    rprint(f'==> {pretrain_ckpt_name}', rank)
+    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
-
-    # Load ADV Network
-    if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    else:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
     if args.dataset == 'imagenet':

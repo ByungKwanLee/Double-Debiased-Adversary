@@ -36,8 +36,8 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12357", type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -50,7 +50,7 @@ parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--epochs', default=10, type=int)
 parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=256, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
@@ -86,6 +86,18 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}{args.depth}_best.t7'
 
+# Load ADV Network
+if args.network in transformer_list:
+    pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+    checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+else:
+    # standard
+    # pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
+    # checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+
+    # adv
+    pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+    checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
 def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, scaler_list, attack, rank):
     optimizer, optimizer_logistic,  optimizer_total = optimizer_list
@@ -151,14 +163,14 @@ def train(net, net_logistic, trainloader, optimizer_list, lr_scheduler_list, sca
             l_adv = F.cross_entropy(adv_outputs2, targets2, reduction='none')
             l_nat = F.cross_entropy(outputs2, targets2, reduction='none')
 
-            theta1 = (adv_outputs2.softmax(dim=1) * ((adv_outputs2.softmax(dim=1)+1e-3).log() - (outputs2.softmax(dim=1)+1e-3).log())).sum(dim=1)
+            theta1 = (adv_outputs2.softmax(dim=1) * ((adv_outputs2.softmax(dim=1)+1e-3).log() - (outputs2.detach().softmax(dim=1)+1e-3).log())).sum(dim=1)
 
             # first theta2
-            theta2 = 1/(adv_outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(adv_outputs2, targets2, reduction='none') \
-                     - 1/(1-outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(outputs2, targets2, reduction='none')
+            # theta2 = 1/(adv_outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(adv_outputs2, targets2, reduction='none') \
+            #          - 1/(1-outputs2.softmax(dim=1)[:, targets2]+1e-3).detach() * F.cross_entropy(outputs2, targets2, reduction='none')
 
             # second theta2
-            # theta2 = l_adv - l_nat
+            theta2 = l_adv - l_nat
 
             theta = theta1 + theta2.abs()
             loss_theta = theta.mean()
@@ -266,8 +278,6 @@ def test(net, net_logistic, testloader, attack, rank):
         # update best acc
         best_acc = acc
 
-
-
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # print configuration
     print_configuration(args, rank)
@@ -286,7 +296,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
-
+    net.load_state_dict(checkpoint['net'])
+    rprint(f'==> {pretrain_ckpt_name}', rank)
+    rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # network f logistic
     net_logistic = get_network(network='logistic', depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
@@ -302,22 +314,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset, train_batch_size=args.batch_size,
                                                            test_batch_size=args.test_batch_size, upsample=upsample)
 
-    # Load ADV Network
-    if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    else:
-        # standard
-        # pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
-        # checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
-        # adv
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
-    net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+
 
     # Attack loader
     if args.dataset == 'imagenet':
