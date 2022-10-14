@@ -21,7 +21,7 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='vit', type=str)
 parser.add_argument('--depth', default=12, type=int)
 parser.add_argument('--base', default='adv', type=str)
