@@ -34,7 +34,7 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
     elif network == 'resnet':
         model = resnet(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'wide':
-        model = wide_resnet(depth=depth, widen_factor=5, dataset=dataset, mean=mean, std=std)
+        model = wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
 
     # Transformer
     elif network == 'vit':

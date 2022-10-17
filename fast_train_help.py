@@ -79,22 +79,6 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/help/{args.dataset}/{args.dataset}_help_{args.network}{args.depth}_best.t7'
 
-# Load ADV Network
-if args.network in transformer_list:
-    adv_pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-    adv_checkpoint = torch.load(adv_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-else:
-    adv_pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
-    adv_checkpoint = torch.load(adv_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-
-# Load Plain Network
-if args.network in transformer_list:
-    standard_pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-    standard_checkpoint = torch.load(standard_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-else:
-    standard_pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
-    standard_checkpoint = torch.load(standard_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-
 def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
     std.eval()
@@ -236,6 +220,24 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # DDP environment settings
     print("Use GPU: {} for training".format(gpu_list[rank]))
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
+
+    # Load ADV Network
+    if args.network in transformer_list:
+        adv_pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        adv_checkpoint = torch.load(adv_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+    else:
+        adv_pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        adv_checkpoint = torch.load(adv_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+
+    # Load Plain Network
+    if args.network in transformer_list:
+        standard_pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        standard_checkpoint = torch.load(standard_pretrain_ckpt_name,
+                                         map_location=torch.device(torch.cuda.current_device()))
+    else:
+        standard_pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
+        standard_checkpoint = torch.load(standard_pretrain_ckpt_name,
+                                         map_location=torch.device(torch.cuda.current_device()))
 
     # init robust model and Distributed Data Parallel
     net = get_network(network=args.network,

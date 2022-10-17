@@ -79,14 +79,6 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/mart/{args.dataset}/{args.dataset}_mart_{args.network}{args.depth}_best.t7'
 
-# Load ADV Network
-if args.network in transformer_list:
-    pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-    checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-else:
-    pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
-    checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     net.train()
     train_loss = 0
@@ -221,6 +213,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # DDP environment settings
     print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
+
+    # Load ADV Network
+    if args.network in transformer_list:
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+    else:
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
     # init model and Distributed Data Parallel
     net = get_network(network=args.network,
