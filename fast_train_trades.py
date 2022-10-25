@@ -45,7 +45,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -79,7 +79,6 @@ if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/trades/{args.dataset}/{args.dataset}_trades_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
     saving_ckpt_name = f'./checkpoint/trades/{args.dataset}/{args.dataset}_trades_{args.network}{args.depth}_best.t7'
-
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     net.train()
@@ -196,7 +195,7 @@ def trades_loss(logits,
     criterion_kl = torch.nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(6) * loss_robust
+    loss = loss_natural + float(2) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -211,6 +210,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
+    # Load ADV Network
+    if args.network in transformer_list:
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+    else:
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+
     # init model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
@@ -223,21 +230,16 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
 
+    # load checkpoint
+    net.load_state_dict(checkpoint['net'])
+    rprint(f'==> {pretrain_ckpt_name}', rank)
+    rprint('==> Successfully Loaded ADV checkpoint..', rank)
+
+
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
-
-    # Load ADV Network
-    if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    else:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
     # Attack loader
     if args.dataset == 'imagenet':
@@ -258,8 +260,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
     else:
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=int(round(args.epochs/15))*len(trainloader),
-        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
+        step_size_up=int(round(args.epochs/5))*len(trainloader),
+        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/5))*len(trainloader))
 
 
     # training and testing

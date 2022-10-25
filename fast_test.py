@@ -21,15 +21,15 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='vit', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--network', default='deit', type=str)
 parser.add_argument('--depth', default=12, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
 parser.add_argument('--gpu', default='0', type=str)
 
 # transformer parameter
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 
@@ -57,6 +57,9 @@ _, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1,
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                   img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
 net = net.cuda()
+net_G = get_network(network='unet', depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
+                  img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
+net_G = net_G.cuda()
 
 # checkpoint base tag
 base_tag = '' if args.base == 'standard' else '_' + args.base
@@ -67,10 +70,16 @@ if args.network in transformer_list:
 else:
     net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
 
+# gen_checkpoint_name = f'checkpoint/generator/{args.dataset}/{args.dataset}_generator_{args.network}{args.depth}_best.t7'
+
 # load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
+# gen_checkpoint = torch.load(gen_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net_G']
+
 print(f"[*] Loaded network params : {net_checkpoint_name.split('/')[-1]}")
+# print(f"[*] Loaded generator params : {gen_checkpoint_name.split('/')[-1]}")
 checkpoint_module(net_checkpoint, net)
+# checkpoint_module(gen_checkpoint, net_G)
 
 # init criterion
 criterion = nn.CrossEntropyLoss()
@@ -131,6 +140,30 @@ def clean_test():
 
         desc = (f'[Test] Clean: {100. * correct / total:.2f}%')
         prog_bar.set_description(desc, refresh=True)
+
+
+def gen_test():
+    net_G.eval()
+    net.eval()
+
+    total = 0
+    correct = 0
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+
+    for batch_idx, (inputs, targets) in prog_bar:
+        inputs, targets = inputs.cuda(), targets.cuda()
+
+        with autocast():
+            gen_input = net_G(inputs)
+            gen_output = net(gen_input)
+        _, gen_predicted = gen_output.max(1)
+
+        total += targets.size(0)
+        correct += gen_predicted.eq(targets).sum().item()
+
+        desc = (f'[Test] Generator: {100. * correct / total:.2f}%')
+        prog_bar.set_description(desc, refresh=True)
+
 
 
 def adv_analysis_test():
@@ -211,23 +244,22 @@ def class_num(dataset_name):
         raise ValueError
 
 def gen_drift_matrix(class_num, pred, targets, conf=False):
-    confindence, predicted = pred.max(1)
+    confindence, predicted = pred.softmax(dim=-1).max(1)
 
     drift_matrix = torch.zeros([class_num[0], class_num[0]])
     conf_matrix = torch.zeros([class_num[0], class_num[0]])
+
     if conf:
         for index in range(predicted.shape[0]):
-            drift_matrix[targets[index], predicted[index]] += 1
             conf_matrix[targets[index], predicted[index]] += confindence[index].cpu().detach()
 
-        out_matrix = conf_matrix / drift_matrix
+        return conf_matrix
 
     else:
         for index in range(predicted.shape[0]):
             drift_matrix[targets[index], predicted[index]] += 1
 
-        out_matrix = drift_matrix
-    return out_matrix
+        return drift_matrix
 
 def measure_adversarial_drift():
     net.eval()
@@ -255,11 +287,13 @@ def measure_adversarial_drift():
             inputs, targets = inputs.cuda(), targets.cuda()
             adv_inputs = attack_module[key](inputs, targets)
 
-            adv_output = net(adv_inputs)
+            with autocast():
+                adv_output = net(adv_inputs)
             _, adv_predicted = adv_output.max(1)
 
             # drift matrix update
             #drift_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets)
+            drift_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets, conf=False)
             pred_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets, conf=True)
 
             total += targets.size(0)
@@ -268,13 +302,16 @@ def measure_adversarial_drift():
             desc = (f'[Test/{key}] Adv: {100.*adv_correct/total:.2f}%')
             prog_bar.set_description(desc, refresh=True)
 
-        pred_matrix = pred_matrix / (batch_idx + 1)
+        num_matrix = drift_matrix / class_num(args.dataset)[1]
+        conf_matrix = pred_matrix / drift_matrix
+
 
         print("ok")
 
 if __name__ == '__main__':
     clean_test()
-    if args.base != 'standard': adv_test()
-    #measure_adversarial_drift()
+    # gen_test()
+    # if args.base != 'standard': adv_test()
+    # measure_adversarial_drift()
 
 

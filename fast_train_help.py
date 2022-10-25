@@ -11,6 +11,7 @@ import torch.distributed as dist
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
+from utils.scheduler import WarmupCosineSchedule
 
 # attack loader
 # from attack.attack import attack_loader
@@ -31,7 +32,7 @@ parser.add_argument('--NAME', default='HELP', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12359", type=str)
 
 # transformer parameter
@@ -44,7 +45,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -79,8 +80,6 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/help/{args.dataset}/{args.dataset}_help_{args.network}{args.depth}_best.t7'
 
-
-
 def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
     std.eval()
@@ -106,7 +105,7 @@ def train(net, std, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             adv_outputs = net(adv_inputs)
             hat_outputs = net(inputs + 2*(adv_inputs-inputs))
             hat_target = std(adv_inputs).max(1)[1]
-            loss = trades_loss(outputs, adv_outputs, targets)+0.25*F.cross_entropy(hat_outputs, hat_target)
+            loss = mart_loss(outputs, adv_outputs, targets)+0.25*F.cross_entropy(hat_outputs, hat_target)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -202,13 +201,19 @@ def test(net, testloader, attack, rank):
         best_acc = acc
 
 
-def trades_loss(logits,
-                logits_adv,
-                targets):
-    criterion_kl = torch.nn.KLDivLoss(size_average=False)
-    loss_natural = F.cross_entropy(logits, targets)
-    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(4) * loss_robust
+def mart_loss(logits,
+            logits_adv,
+            targets):
+    kl = torch.nn.KLDivLoss(reduction='none')
+    adv_probs = F.softmax(logits_adv, dim=1)
+    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
+    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
+    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
+    nat_probs = F.softmax(logits, dim=1)
+    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
+    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
+        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
+    loss = loss_adv + float(1) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -223,6 +228,24 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print("Use GPU: {} for training".format(gpu_list[rank]))
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
+    # Load ADV Network
+    if args.network in transformer_list:
+        adv_pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        adv_checkpoint = torch.load(adv_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+    else:
+        adv_pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        adv_checkpoint = torch.load(adv_pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
+
+    # Load Plain Network
+    if args.network in transformer_list:
+        standard_pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        standard_checkpoint = torch.load(standard_pretrain_ckpt_name,
+                                         map_location=torch.device(torch.cuda.current_device()))
+    else:
+        standard_pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
+        standard_checkpoint = torch.load(standard_pretrain_ckpt_name,
+                                         map_location=torch.device(torch.cuda.current_device()))
+
     # init robust model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
@@ -234,6 +257,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
+
+    # load net checkpoint
+    net.load_state_dict(adv_checkpoint['net'])
+    rprint(f'==> {adv_pretrain_ckpt_name}', rank)
+    rprint('==> Successfully Loaded ADV checkpoint..', rank)
+
 
     proxy = get_network(network=args.network,
                       depth=args.depth,
@@ -259,36 +288,19 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     std = std.to(memory_format=torch.channels_last).cuda()
     std = torch.nn.parallel.DistributedDataParallel(std, device_ids=[rank], output_device=[rank])
 
+    # load std checkpoint
+    std.load_state_dict(standard_checkpoint['net'])
+    rprint(f'==> {standard_pretrain_ckpt_name}', rank)
+    rprint(f'==> Successfully Loaded Standard checkpoint..', rank)
+
     # awp adversary
-    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=args.learning_rate, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
 
 
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
                                                   train_batch_size=args.batch_size,
                                                   test_batch_size=args.test_batch_size)
-
-    # Load ADV Network
-    if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    else:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded ADV checkpoint..', rank)
-
-    # Load Plain Network
-    if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    else:
-        pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
-        checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-    std.load_state_dict(checkpoint['net'])
-    rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint(f'==> Successfully Loaded Standard checkpoint..', rank)
 
     # Attack loader
     if args.dataset == 'imagenet':
@@ -303,8 +315,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=args.epoch * len(trainloader)/2, step_size_down=args.epoch * len(trainloader)/2)
+
+    # init optimizer and lr scheduler
+    if args.network in transformer_list:
+        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
+    else:
+        lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+                                                         step_size_up=int(round(args.epochs / 5)) * len(trainloader),
+                                                         step_size_down=args.epochs * len(trainloader) - int(
+                                                             round(args.epochs / 5)) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epochs):

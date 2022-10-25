@@ -9,6 +9,7 @@ from models.cattention_transformer import cait
 from models.tnt_transformer import tnt
 from models.tnt_transformer_b import tnt_b
 from models.generator import daml_gen
+from models.unet import daml_unet
 from models.logistic import logistic
 
 def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretrain):
@@ -34,7 +35,7 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
     elif network == 'resnet':
         model = resnet(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'wide':
-        model = wide_resnet(depth=depth, widen_factor=5, dataset=dataset, mean=mean, std=std)
+        model = wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
 
     # Transformer
     elif network == 'vit':
@@ -59,6 +60,10 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
     # Generator
     elif network == 'gen':
         model = daml_gen(dataset=dataset, mean=mean, std=std)
+
+    # Generator
+    elif network == 'unet':
+        model = daml_unet(mean=mean, std=std)
 
     # Logistic Regression
     elif network == 'logistic':
