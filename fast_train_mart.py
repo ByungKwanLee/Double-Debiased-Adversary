@@ -240,10 +240,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
-    # fast init dataloader
-    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
-                                                  train_batch_size=args.batch_size,
-                                                  test_batch_size=args.test_batch_size)
+    # upsampling for transformer
+    upsample = True if args.network in transformer_list else False
+
+    # fast dataloader
+    trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset, train_batch_size=args.batch_size,
+                                                           test_batch_size=args.test_batch_size, upsample=upsample)
 
     # Attack loader
     if args.dataset == 'imagenet':
