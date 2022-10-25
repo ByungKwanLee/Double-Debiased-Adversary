@@ -24,6 +24,11 @@ def set_random(seed):
     torch.random.manual_seed(seed)
     random.seed(seed)
 
+def zero_out(input):
+    # return input[(input ** 2).sum(dim=-1) != 0]
+    return input[input != 0]
+
+
 def checkpoint_module(checkpoint, net):
     from collections import OrderedDict
     new_state_dict = OrderedDict()
@@ -75,6 +80,28 @@ class SmoothCrossEntropyLoss(torch.nn.Module):
         elif self.reduction == 'sum':
             return loss.sum()
         return loss
+
+class SoftCrossEntropyLoss(torch.nn.Module):
+    """
+    Soft cross entropy loss with label smoothing.
+    """
+    def __init__(self, smoothing=0.0, reduction='mean'):
+        super(SoftCrossEntropyLoss, self).__init__()
+        self.smoothing = smoothing
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        num_classes = input.shape[1]
+        if target.ndim == 1:
+            target = torch.nn.functional.one_hot(target, num_classes)
+        logprobs = torch.nn.functional.log_softmax(input, dim=1)
+        loss = - (target.softmax(dim=1) * logprobs)
+        # if self.reduction == 'mean':
+        #     return loss.mean()
+        # elif self.reduction == 'sum':
+        #     return loss.sum()
+        return loss
+
 
 
 def get_resolution(epoch, min_res, max_res, end_ramp, start_ramp):
@@ -132,6 +159,7 @@ def KLDivergence(q, p):
 def kld_loss(q, p):
     kld = q * ((q + 1e-4).log() - (p + 1e-4).log())
     return kld.sum(dim=1).mean()
+
 
 # imagenet-c dataset loadername
 # import torchvision

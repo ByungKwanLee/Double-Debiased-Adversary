@@ -54,7 +54,6 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
         else:
             model = tnt_b(depth=depth, tnt_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
                           pretrained=pretrain, mean=mean, std=std)
-
     else:
         raise NotImplementedError
 
