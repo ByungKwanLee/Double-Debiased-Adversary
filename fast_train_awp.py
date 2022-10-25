@@ -12,6 +12,7 @@ import torch.distributed as dist
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
+from utils.scheduler import WarmupCosineSchedule
 
 # attack loader
 # from attack.attack import attack_loader
@@ -45,7 +46,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.1, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -102,7 +103,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         with autocast():
             outputs = net(inputs)
             adv_outputs = net(adv_inputs)
-            loss = trades_loss(outputs, adv_outputs, targets)
+            loss = mart_loss(outputs, adv_outputs, targets)
 
         # Accerlating backward propagation
         scaler.scale(loss).backward()
@@ -197,13 +198,19 @@ def test(net, testloader, attack, rank):
         # update best acc
         best_acc = acc
 
-def trades_loss(logits,
-                logits_adv,
-                targets):
-    criterion_kl = torch.nn.KLDivLoss(size_average=False)
-    loss_natural = F.cross_entropy(logits, targets)
-    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(6) * loss_robust
+def mart_loss(logits,
+            logits_adv,
+            targets):
+    kl = torch.nn.KLDivLoss(reduction='none')
+    adv_probs = F.softmax(logits_adv, dim=1)
+    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
+    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
+    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
+    nat_probs = F.softmax(logits, dim=1)
+    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
+    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
+        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
+    loss = loss_adv + float(1) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -256,7 +263,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
 
     # awp adversary
-    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=args.learning_rate, gamma=args.learning_rate, autocast=autocast, GradScaler=GradScaler)
 
     # fast init dataloader
     trainloader, testloader, decoder = get_fast_dataloader(dataset=args.dataset,
@@ -276,10 +283,15 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-                                                     step_size_up=int(round(args.epochs / 15)) * len(trainloader),
-                                                     step_size_down=args.epochs * len(trainloader) - int(
-                                                         round(args.epochs / 15)) * len(trainloader))
+
+    # init optimizer and lr scheduler
+    if args.network in transformer_list:
+        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
+    else:
+        lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+                                                         step_size_up=int(round(args.epochs / 5)) * len(trainloader),
+                                                         step_size_down=args.epochs * len(trainloader) - int(
+                                                             round(args.epochs / 5)) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epochs):

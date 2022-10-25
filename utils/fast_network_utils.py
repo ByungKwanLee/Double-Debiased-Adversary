@@ -8,8 +8,6 @@ from models.swin_transformer import swin
 from models.cattention_transformer import cait
 from models.tnt_transformer import tnt
 from models.tnt_transformer_b import tnt_b
-from models.generator import daml_gen
-from models.logistic import logistic
 
 def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretrain):
 
@@ -56,13 +54,6 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
         else:
             model = tnt_b(depth=depth, tnt_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
                           pretrained=pretrain, mean=mean, std=std)
-    # Generator
-    elif network == 'gen':
-        model = daml_gen(dataset=dataset, mean=mean, std=std)
-
-    # Logistic Regression
-    elif network == 'logistic':
-        model = logistic(depth=18, mean=mean, std=std)
 
     else:
         raise NotImplementedError

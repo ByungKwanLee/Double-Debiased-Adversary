@@ -45,7 +45,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -195,7 +195,7 @@ def trades_loss(logits,
     criterion_kl = torch.nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(6) * loss_robust
+    loss = loss_natural + float(2) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -260,8 +260,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
     else:
         lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=int(round(args.epochs/15))*len(trainloader),
-        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
+        step_size_up=int(round(args.epochs/5))*len(trainloader),
+        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/5))*len(trainloader))
 
 
     # training and testing

@@ -21,9 +21,9 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
 parser.add_argument('--gpu', default='0', type=str)
@@ -131,6 +131,45 @@ def clean_test():
 
         desc = (f'[Test] Clean: {100. * correct / total:.2f}%')
         prog_bar.set_description(desc, refresh=True)
+
+
+def targeted_test():
+    net.eval()
+
+    attack_module = {}
+    for attack_name in ['targeted']:
+        args.attack = attack_name
+        if args.dataset == 'imagenet':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps / 4,
+                                                       steps=args.steps)
+        elif args.dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps / 2,
+                                                       steps=args.steps)
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=100)
+
+    for key in attack_module:
+        total = 0
+        adv_correct = 0
+        targeted_total = 0
+        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
+
+        for batch_idx, (inputs, targets) in prog_bar:
+            inputs, targets = inputs.cuda(), targets.cuda()
+            adv_inputs = attack_module[key](inputs, targets)
+
+            with autocast():
+                adv_output = net(adv_inputs)
+            _, adv_predicted = adv_output.max(1)
+
+            targeted_label = torch.ones_like(targets[targets==0])*8
+            targeted_adv_predicted = adv_predicted[targets==0]
+
+            adv_correct += targeted_adv_predicted.eq(targeted_label).sum().item()
+            targeted_total += targeted_label.size(0)
+
+            desc = (f'[Test/{key}] Adv: {100. * adv_correct / targeted_total:.2f}%')
+            prog_bar.set_description(desc, refresh=True)
 
 
 def adv_analysis_test():
@@ -259,8 +298,8 @@ def measure_adversarial_drift():
             _, adv_predicted = adv_output.max(1)
 
             # drift matrix update
-            #drift_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets)
-            pred_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets, conf=True)
+            drift_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets)
+            # pred_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets, conf=True)
 
             total += targets.size(0)
             adv_correct += adv_predicted.eq(targets).sum().item()
@@ -268,13 +307,14 @@ def measure_adversarial_drift():
             desc = (f'[Test/{key}] Adv: {100.*adv_correct/total:.2f}%')
             prog_bar.set_description(desc, refresh=True)
 
-        pred_matrix = pred_matrix / (batch_idx + 1)
+        # pred_matrix = pred_matrix / (batch_idx + 1)
 
         print("ok")
 
 if __name__ == '__main__':
-    clean_test()
-    if args.base != 'standard': adv_test()
-    #measure_adversarial_drift()
+    # targeted_test()
+    # clean_test()
+    # if args.base != 'standard': adv_test()
+    measure_adversarial_drift()
 
 

@@ -11,6 +11,7 @@ import torch.distributed as dist
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
+from utils.scheduler import WarmupCosineSchedule
 
 # attack loader
 # from attack.attack import attack_loader
@@ -31,7 +32,7 @@ parser.add_argument('--NAME', default='MART', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
@@ -44,7 +45,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.05, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -199,7 +200,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(3) * loss_robust
+    loss = loss_adv + float(1) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -225,7 +226,11 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # init model and Distributed Data Parallel
     net = get_network(network=args.network,
                       depth=args.depth,
-                      dataset=args.dataset)
+                      dataset=args.dataset,
+                      tran_type=args.tran_type,
+                      img_size=args.img_resize,
+                      patch_size=args.patch_size,
+                      pretrain=args.pretrain)
     net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
@@ -253,8 +258,16 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # init optimizer and lr scheduler
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-    step_size_up=args.epoch * len(trainloader)/2, step_size_down=args.epoch * len(trainloader)/2)
+
+    # init optimizer and lr scheduler
+    if args.network in transformer_list:
+        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
+    else:
+        lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+                                                         step_size_up=int(round(args.epochs / 5)) * len(
+                                                             trainloader),
+                                                         step_size_down=args.epochs * len(trainloader) - int(
+                                                             round(args.epochs / 5)) * len(trainloader))
 
     # training and testing
     for epoch in range(args.epochs):
