@@ -124,10 +124,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
             is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
-            # clean train
-            is_not_train2 = outputs2.max(1)[1] != targets2
-            is_not_train2 = ~is_not_train2
-
             # Theta
             Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
             Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])

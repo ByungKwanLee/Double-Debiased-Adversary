@@ -116,31 +116,22 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             outputs1 = net(inputs1)
 
             # attack
-            is_attack1 = (adv_outputs1.max(1)[1] != targets1)
-
-            # attack
-            is_noclean1 = (outputs1.max(1)[1] != targets1)
+            is_attack1 = (adv_outputs1.max(1)[1] != targets1) * (outputs1.max(1)[1] == targets1)
 
             # base loss
-            base_loss = trades_loss_dml(outputs1[is_noclean1], targets1[is_noclean1], outputs1[is_attack1], adv_outputs1[is_attack1])
+            base_loss = trades_loss_dml(outputs1, targets1, outputs1[is_attack1], adv_outputs1[is_attack1])
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
 
             # attack
-            is_attack2 = (adv_outputs2.max(1)[1] != targets2)
+            is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
-            # attack
-            is_noclean2 = (outputs2.max(1)[1] != targets2)
-            is_clean2 = ~is_noclean2
-
             # Theta
-            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * trades_loss_dml(outputs2[is_noclean2], targets2[is_noclean2],
-                                                                                  outputs2[is_attack2], adv_outputs2[is_attack2])
-            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * trades_loss_dml(outputs2[is_clean2], targets2[is_clean2],
-                                                                                      outputs2[is_not_attack2], adv_outputs2[is_not_attack2])
+            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
             dml_loss = (Y_do_T - Y_do_g).abs()
 
             # Total Loss
