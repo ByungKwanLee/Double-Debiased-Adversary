@@ -14,6 +14,9 @@ from utils.utils import *
 # fetch args
 parser = argparse.ArgumentParser()
 
+# attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa']
+attack_list = ['dlr', 'ap' ]
+
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
@@ -76,8 +79,7 @@ def main_worker():
     checkpoint_module(checkpoint['net'], net)
 
     # test
-    test_whitebox(net, args.dataset, testloader, attack_list=['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa'],
-                  steps = args.steps, eps=args.eps, rank=0)
+    test_whitebox(net, args.dataset, testloader, attack_list=attack_list, steps = args.steps, eps=args.eps, rank=0)
 
 if __name__ == '__main__':
     main_worker()

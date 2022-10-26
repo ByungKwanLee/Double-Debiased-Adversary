@@ -3,7 +3,6 @@ from attack.libfastattack.FastFGSMTrain import FastFGSMTrain
 from attack.libfastattack.FastMIM import FastMIM
 from attack.libfastattack.FastBIM import FastBIM
 from attack.libfastattack.FastPGD import FastPGD
-from attack.libfastattack.FastCausal import FastCausal
 from attack.libfastattack.FastCWLinf import FastCWLinf
 from attack.libfastattack.FastAPGD import FastAPGD
 from attack.libfastattack.FastAutoAttack import FastAutoAttack
@@ -25,15 +24,11 @@ def attack_loader(net, attack, eps, steps):
         return FastPGD(model=net, eps=eps,
                                 alpha=eps/steps*2.3, steps=steps, random_start=True)
 
-    elif attack == "inverse_pgd":
-        return FastCausal(model=net, eps=eps,
-                                alpha=eps/steps*2.3, steps=steps, random_start=True)
-
     elif attack == "mim":
         return FastMIM(model=net, eps=eps, alpha=1/255, steps=steps)
 
     elif attack == "cw_linf":
-        return FastCWLinf(model=net, eps=eps, scale=0.1, steps=100)
+        return FastCWLinf(model=net, eps=eps, scale=0.1, steps=30)
 
     elif attack == "ap":
         return FastAPGD(model=net, eps=eps, scale=0.1, loss='ce', steps=steps)
