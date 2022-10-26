@@ -33,8 +33,8 @@ parser.add_argument('--NAME', default='DAML-TRADES', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12357", type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12358", type=str)
 
 
 # transformer parameter
@@ -114,25 +114,34 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             # network propagation
             adv_outputs1 = net(adv_inputs1)
             outputs1 = net(inputs1)
-            base_loss = trades_loss(outputs1, adv_outputs1, targets1)
+
+            # attack
+            is_attack1 = (adv_outputs1.max(1)[1] != targets1)
+
+            # attack
+            is_noclean1 = (outputs1.max(1)[1] != targets1)
+
+            # base loss
+            base_loss = trades_loss_dml(outputs1[is_noclean1], targets1[is_noclean1], outputs1[is_attack1], adv_outputs1[is_attack1])
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
-            adv_target_prob2 = adv_outputs2.softmax(dim=1)[range(adv_outputs2.shape[0]), targets2]
 
             # attack
-            is_attack2 = adv_outputs2.max(1)[1] != targets2
-            is_not_attack2 = adv_outputs2.max(1)[1] == targets2
+            is_attack2 = (adv_outputs2.max(1)[1] != targets2)
+            is_not_attack2 = ~is_attack2
+
+            # attack
+            is_noclean2 = (outputs2.max(1)[1] != targets2)
+            is_clean2 = ~is_noclean2
 
             # Theta
-            Theta21 = targets2.shape[0] / is_attack2.sum() * trades_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
-            Theta22 = targets2.shape[0] / is_not_attack2.sum() * trades_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            Theta23 = -adv_target_prob2[is_attack2].mean().log()
-            Theta24 = -adv_target_prob2[is_not_attack2].mean().log()
-
-            dml_loss = (Theta21 - Theta22.detach()).abs() + (Theta23 - Theta24.detach()).abs()
-            # dml_loss = Theta21
+            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * trades_loss_dml(outputs2[is_noclean2], targets2[is_noclean2],
+                                                                                  outputs2[is_attack2], adv_outputs2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * trades_loss_dml(outputs2[is_clean2], targets2[is_clean2],
+                                                                                      outputs2[is_not_attack2], adv_outputs2[is_not_attack2])
+            dml_loss = (Y_do_T - Y_do_g).abs()
 
             # Total Loss
             loss = base_loss + dml_loss
@@ -164,12 +173,10 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
 
-def trades_loss(logits,
-                logits_adv,
-                targets):
+def trades_loss_dml(logits, targets, logits_clean, logits_adv):
     criterion_kl = torch.nn.KLDivLoss(size_average=False)
     loss_natural = F.cross_entropy(logits, targets)
-    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
+    loss_robust = (1.0 / logits_clean.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits_clean, dim=1))
     loss = loss_natural + float(2) * loss_robust
     return loss
 
@@ -219,7 +226,6 @@ def test(net, testloader, attack, rank):
         _, predicted = outputs.max(1)
 
         test_loss += loss.item()
-        _, adv_predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += adv_predicted.eq(targets).sum().item()
 

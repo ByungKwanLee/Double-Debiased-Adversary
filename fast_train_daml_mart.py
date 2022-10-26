@@ -119,20 +119,15 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             # network propagation
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
-            adv_target_prob2 = adv_outputs2.softmax(dim=1)[range(adv_outputs2.shape[0]), targets2]
 
             # attack
             is_attack2 = adv_outputs2.max(1)[1] != targets2
-            is_not_attack2 = adv_outputs2.max(1)[1] == targets2
+            is_not_attack2 = ~is_attack2
 
             # Theta
-            Theta21 = targets2.shape[0] / is_attack2.sum() * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
-            Theta22 = targets2.shape[0] / is_not_attack2.sum() * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            Theta23 = -adv_target_prob2[is_attack2].mean().log()
-            Theta24 = -adv_target_prob2[is_not_attack2].mean().log()
-
-            dml_loss = (Theta21 - Theta22.detach()).abs() + (Theta23 - Theta24.detach()).abs()
-            # dml_loss = Theta21
+            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss = (Y_do_T - Y_do_g).abs()
 
             # Total Loss
             loss = base_loss + dml_loss
@@ -195,9 +190,9 @@ def test(net, testloader, attack, rank):
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
-
         test_loss += loss.item()
         _, predicted = outputs.max(1)
+
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -226,7 +221,6 @@ def test(net, testloader, attack, rank):
         _, predicted = outputs.max(1)
 
         test_loss += loss.item()
-        _, adv_predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += adv_predicted.eq(targets).sum().item()
 

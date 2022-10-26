@@ -33,8 +33,8 @@ parser.add_argument('--NAME', default='DAML-AWP', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12358", type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12359", type=str)
 
 
 # transformer parameter
@@ -123,20 +123,15 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             # network propagation
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
-            adv_target_prob2 = adv_outputs2.softmax(dim=1)[range(adv_outputs2.shape[0]), targets2]
 
             # attack
             is_attack2 = adv_outputs2.max(1)[1] != targets2
-            is_not_attack2 = adv_outputs2.max(1)[1] == targets2
+            is_not_attack2 = ~is_attack2
 
             # Theta
-            Theta21 = targets2.shape[0] / is_attack2.sum() * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
-            Theta22 = targets2.shape[0] / is_not_attack2.sum() * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            Theta23 = -adv_target_prob2[is_attack2].mean().log()
-            Theta24 = -adv_target_prob2[is_not_attack2].mean().log()
-
-            dml_loss = (Theta21 - Theta22.detach()).abs() + (Theta23 - Theta24.detach()).abs()
-            # dml_loss = Theta21
+            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss = (Y_do_T - Y_do_g).abs()
 
             # Total Loss
             loss = base_loss + dml_loss
@@ -202,9 +197,9 @@ def test(net, testloader, attack, rank):
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
-
         test_loss += loss.item()
         _, predicted = outputs.max(1)
+
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -233,7 +228,6 @@ def test(net, testloader, attack, rank):
         _, predicted = outputs.max(1)
 
         test_loss += loss.item()
-        _, adv_predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += adv_predicted.eq(targets).sum().item()
 

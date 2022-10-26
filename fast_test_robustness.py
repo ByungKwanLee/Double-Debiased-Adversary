@@ -21,7 +21,7 @@ attack_list = ['cw_linf', 'aa' ]
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='daml_trades', type=str)
+parser.add_argument('--base', default='daml_adv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 

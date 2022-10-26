@@ -118,19 +118,20 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
-            adv_target_prob2 = adv_outputs2.softmax(dim=1)[range(adv_outputs2.shape[0]), targets2]
+            outputs2 = net(inputs2)
 
             # attack
             is_attack2 = adv_outputs2.max(1)[1] != targets2
-            is_not_attack2 = adv_outputs2.max(1)[1] == targets2
+            is_not_attack2 = ~is_attack2
+
+            # clean train
+            is_not_train2 = outputs2.max(1)[1] != targets2
+            is_not_train2 = ~is_not_train2
 
             # Theta
-            Theta21 = targets2.shape[0] / is_attack2.sum() * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
-            Theta22 = targets2.shape[0] / is_not_attack2.sum() * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            Theta23 = adv_target_prob2[is_attack2].mean().log()
-            Theta24 = adv_target_prob2[is_not_attack2].mean().log()
-
-            dml_loss = Theta21 - Theta22 + Theta23 - Theta24
+            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss = (Y_do_T-Y_do_g).abs()
 
             # Total Loss
             loss = base_loss + dml_loss
@@ -143,14 +144,14 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
         lr_scheduler.step()
 
         # tensorboard
-        if rank == 0:
-            writer.add_scalar('Train_Loss_F/lossF', base_loss, counter)
-            writer.add_scalar('Train_Loss_D/lossD', dml_loss, counter)
-            writer.add_scalar('Train_Loss_D/lossD/Theta', Theta21 - Theta22, counter)
-            writer.add_scalar('Train_Loss_D/lossD/Theta2', Theta23 - Theta24, counter)
-            writer.add_scalar('Learning Rate/lr', lr_scheduler.get_last_lr()[0], counter)
-
-            counter += 1
+        # if rank == 0:
+        #     writer.add_scalar('Train_Loss_F/lossF', base_loss, counter)
+        #     writer.add_scalar('Train_Loss_D/lossD', dml_loss, counter)
+        #     writer.add_scalar('Train_Loss_D/lossD/Theta', Theta21 - Theta22, counter)
+        #     writer.add_scalar('Train_Loss_D/lossD/Theta2', Theta23 - Theta24, counter)
+        #     writer.add_scalar('Learning Rate/lr', lr_scheduler.get_last_lr()[0], counter)
+        #
+        #     counter += 1
 
         train_loss += loss.item()
 
@@ -187,9 +188,9 @@ def test(net, testloader, attack, rank):
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
-
         test_loss += loss.item()
         _, predicted = outputs.max(1)
+
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -218,7 +219,6 @@ def test(net, testloader, attack, rank):
         _, predicted = outputs.max(1)
 
         test_loss += loss.item()
-        _, adv_predicted = adv_outputs.max(1)
         total += targets.size(0)
         correct += adv_predicted.eq(targets).sum().item()
 
