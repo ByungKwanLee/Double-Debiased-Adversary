@@ -30,11 +30,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
-parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='dense', type=str)
 parser.add_argument('--depth', default=100, type=int, help='cait depth = 24')
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12355", type=str)
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--img_resize', default=224, type=int, help='32/224')

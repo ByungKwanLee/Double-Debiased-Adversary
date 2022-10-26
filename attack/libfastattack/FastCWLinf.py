@@ -7,7 +7,7 @@ class FastCWLinf(Attack):
     def __init__(self, model, eps, scale, kappa=0, steps=1000):
         super().__init__("FastCWLinf", model)
         self.eps = eps
-        self.alpha = eps/steps * 3
+        self.alpha = eps/steps * 2.3
         self.kappa = kappa
         self.steps = steps
         self.scale = scale
@@ -59,8 +59,4 @@ class FastCWLinf(Attack):
 
         i, _ = torch.max((1-one_hot_labels)*outputs, dim=1)
         j = torch.masked_select(outputs, one_hot_labels.bool())
-
-        if self._targeted:
-            return torch.clamp((i-j), min=-self.kappa)
-        else:
-            return torch.clamp((j-i), min=-self.kappa)
+        return torch.clamp((j-i), min=-self.kappa)

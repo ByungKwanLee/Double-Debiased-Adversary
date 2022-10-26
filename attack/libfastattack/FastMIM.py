@@ -21,8 +21,6 @@ class FastMIM(Attack):
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
 
-        if self._targeted:
-            target_labels = self._get_target_label(images, labels)
 
         momentum = torch.zeros_like(images).detach().to(self.device)
 
@@ -35,12 +33,7 @@ class FastMIM(Attack):
 
             with autocast():
                 outputs = self.model(adv_images)
-
-                # Calculate loss
-                if self._targeted:
-                    cost = -loss(outputs, target_labels)
-                else:
-                    cost = loss(outputs, labels)
+                cost = loss(outputs, labels)
 
             scaled_loss = self.scaler.scale(cost)
 

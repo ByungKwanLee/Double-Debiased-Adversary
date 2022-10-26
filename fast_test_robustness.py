@@ -15,15 +15,16 @@ from utils.utils import *
 parser = argparse.ArgumentParser()
 
 # attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa']
-attack_list = ['cw_linf', 'aa' ]
+# attack_list = ['cw_linf', 'ap', 'dlr', 'aa' ]
+attack_list = ['cw', 'aa' ]
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='daml_adv', type=str)
+parser.add_argument('--base', default='daml_awp', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='6', type=str) # necessarily one gpu id!!!!
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -79,7 +80,7 @@ def main_worker():
     checkpoint_module(checkpoint['net'], net)
 
     # test
-    test_whitebox(net, args.dataset, testloader, attack_list=attack_list, steps = args.steps, eps=args.eps, rank=0)
+    test_whitebox(net, args.dataset, testloader, attack_list=attack_list, steps=args.steps, eps=args.eps, rank=0)
 
 if __name__ == '__main__':
     main_worker()

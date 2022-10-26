@@ -22,9 +22,6 @@ class FastPGD(Attack):
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
 
-        if self._targeted:
-            target_labels = self._get_target_label(images, labels)
-
         loss = nn.CrossEntropyLoss()
 
         adv_images = images.clone().detach()
@@ -40,12 +37,7 @@ class FastPGD(Attack):
             # Accelerating forward propagation
             with autocast():
                 outputs = self.model(adv_images)
-
-                # Calculate loss
-                if self._targeted:
-                    cost = -loss(outputs, target_labels)
-                else:
-                    cost = loss(outputs, labels)
+                cost = loss(outputs, labels)
 
             # Update adversarial images with gradient scaler applied
             scaled_loss = self.scaler.scale(cost)
