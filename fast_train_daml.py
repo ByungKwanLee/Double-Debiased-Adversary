@@ -34,8 +34,8 @@ parser.add_argument('--NAME', default='DAML', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -265,10 +265,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         # adv
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
-
-        # generator
-        pretrain_generator_ckpt_name = f'checkpoint/generator/{args.dataset}/{args.dataset}_generator_{args.network}{args.depth}_best.t7'
-        checkpoint_generator = torch.load(pretrain_generator_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
     # network f
     # init model and Distributed Data Parallel
