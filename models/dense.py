@@ -54,6 +54,8 @@ class DenseNet(nn.Module):
         self.std = std.view(1, -1, 1, 1)
 
 
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
         nDenseBlocks = (depth-4) // 3
         if bottleneck:
             nDenseBlocks //= 2
@@ -105,7 +107,9 @@ class DenseNet(nn.Module):
         out = self.trans1(self.dense1(out))
         out = self.trans2(self.dense2(out))
         out = self.dense3(out)
-        out = torch.squeeze(F.avg_pool2d(F.relu(self.bn1(out)), 8))
+        out = F.relu(self.bn1(out))
+        out = self.avg_pool(out)
+        out = torch.squeeze(out)
         out = self.fc(out)
         return out
 

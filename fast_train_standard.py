@@ -30,11 +30,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='STANDARD', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='tnt', type=str)
-parser.add_argument('--depth', default=12, type=int, help='cait depth = 24')
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
-parser.add_argument('--port', default="12358", type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--network', default='dense', type=str)
+parser.add_argument('--depth', default=100, type=int, help='cait depth = 24')
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 # transformer parameter
 parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge//xxs/s')
 parser.add_argument('--img_resize', default=224, type=int, help='32/224')
@@ -45,7 +45,7 @@ parser.add_argument('--pretrain', default=True, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=1e-2, type=float) #1e-4 for ViT
+parser.add_argument('--learning_rate', default=0.5, type=float) #1e-4 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -110,7 +110,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler):
 
         prog_bar.set_description(desc, refresh=True)
 
-def test(net, testloader, lr_scheduler, rank):
+def test(net, testloader, rank):
     global best_acc
 
     net.eval()
@@ -211,7 +211,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
         train(net, trainloader, optimizer, lr_scheduler, scaler)
-        test(net, testloader, lr_scheduler, rank)
+        test(net, testloader, rank)
 
 def run():
     torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, join=True)
