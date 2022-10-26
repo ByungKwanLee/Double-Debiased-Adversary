@@ -238,12 +238,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/4, steps=args.steps)
     elif args.dataset == 'tiny':
-        rprint('PGD training', rank)
-        attack = attack_loader(net=net, attack=args.attack, eps=args.eps/2, steps=args.steps)
-        # rprint('PGD and FGSM MIX training', rank)
-        # pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps/2, steps=args.steps)
-        # fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
-        # attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
+        if args.network in transformer_list:
+            rprint('PGD and FGSM MIX training', rank)
+            pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps / 2, steps=args.steps)
+            fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps / 2, steps=args.steps)
+            attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
+        else:
+            rprint('Fast FGSM training', rank)
+            attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps / 2, steps=args.steps)
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
