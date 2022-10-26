@@ -14,7 +14,6 @@ import torch.distributed as dist
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
-from tensorboardX import SummaryWriter
 
 # attack loader
 from attack.fastattack import attack_loader
@@ -30,7 +29,7 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--NAME', default='DAML', type=str)
+parser.add_argument('--NAME', default='DAML-MART', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
@@ -81,15 +80,15 @@ check_dir(log_dir)
 
 # make checkpoint folder and set checkpoint name for saving
 if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
-if not os.path.isdir(f'checkpoint/daml'): os.mkdir(f'checkpoint/daml')
-if not os.path.isdir(f'checkpoint/daml/{args.dataset}'): os.mkdir(f'checkpoint/daml/{args.dataset}')
+if not os.path.isdir(f'checkpoint/daml_mart'): os.mkdir(f'checkpoint/daml_mart')
+if not os.path.isdir(f'checkpoint/daml_mart/{args.dataset}'): os.mkdir(f'checkpoint/daml_mart/{args.dataset}')
 if args.network in transformer_list:
-    saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_mart/{args.dataset}/{args.dataset}_daml_mart_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/daml/{args.dataset}/{args.dataset}_daml_{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_mart/{args.dataset}/{args.dataset}_daml_mart_{args.network}{args.depth}_best.t7'
 
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer):
+def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
     global counter
     net.train()
 
@@ -114,10 +113,12 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
         with autocast():
             # network propagation
             adv_outputs1 = net(adv_inputs1)
-            base_loss = F.cross_entropy(adv_outputs1, targets1)
+            outputs1 = net(inputs1)
+            base_loss = mart_loss(outputs1, adv_outputs1, targets1)
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
+            outputs2 = net(inputs2)
             adv_target_prob2 = adv_outputs2.softmax(dim=1)[range(adv_outputs2.shape[0]), targets2]
 
             # attack
@@ -125,12 +126,13 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
             is_not_attack2 = adv_outputs2.max(1)[1] == targets2
 
             # Theta
-            Theta21 = targets2.shape[0] / is_attack2.sum() * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
-            Theta22 = targets2.shape[0] / is_not_attack2.sum() * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            Theta23 = adv_target_prob2[is_attack2].mean().log()
-            Theta24 = adv_target_prob2[is_not_attack2].mean().log()
+            Theta21 = targets2.shape[0] / is_attack2.sum() * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Theta22 = targets2.shape[0] / is_not_attack2.sum() * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            Theta23 = -adv_target_prob2[is_attack2].mean().log()
+            Theta24 = -adv_target_prob2[is_not_attack2].mean().log()
 
-            dml_loss = Theta21 - Theta22 + Theta23 - Theta24
+            dml_loss = (Theta21 - Theta22.detach()).abs() + (Theta23 - Theta24.detach()).abs()
+            # dml_loss = Theta21
 
             # Total Loss
             loss = base_loss + dml_loss
@@ -141,16 +143,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
 
         # scheduling for Cyclic LR
         lr_scheduler.step()
-
-        # tensorboard
-        if rank == 0:
-            writer.add_scalar('Train_Loss_F/lossF', base_loss, counter)
-            writer.add_scalar('Train_Loss_D/lossD', dml_loss, counter)
-            writer.add_scalar('Train_Loss_D/lossD/Theta', Theta21 - Theta22, counter)
-            writer.add_scalar('Train_Loss_D/lossD/Theta2', Theta23 - Theta24, counter)
-            writer.add_scalar('Learning Rate/lr', lr_scheduler.get_last_lr()[0], counter)
-
-            counter += 1
 
         train_loss += loss.item()
 
@@ -171,6 +163,22 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
         desc = ('[Tr/lr=%.3f] Loss: (F/G) %.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
+
+
+def mart_loss(logits,
+            logits_adv,
+            targets):
+    kl = torch.nn.KLDivLoss(reduction='none')
+    adv_probs = F.softmax(logits_adv, dim=1)
+    tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
+    new_y = torch.where(tmp1[:, -1] == targets, tmp1[:, -2], tmp1[:, -1])
+    loss_adv = F.cross_entropy(logits_adv, targets) + F.nll_loss(torch.log(1.0001 - adv_probs + 1e-12), new_y)
+    nat_probs = F.softmax(logits, dim=1)
+    true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
+    loss_robust = (1.0 / logits.shape[0]) * torch.sum(
+        torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
+    loss = loss_adv + float(2) * loss_robust
+    return loss
 
 def test(net, testloader, attack, rank):
     global best_acc
@@ -311,8 +319,6 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                                     step_size_up=int(round(args.epochs/5))*len(trainloader),
                                                     step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/5))*len(trainloader))
 
-    writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
-
     for epoch in range(args.epochs):
         rprint(f'\nEpoch: {epoch+1}', rank)
         if args.dataset == "imagenet":
@@ -324,7 +330,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
 
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer)
+        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank)
         test(net, testloader, attack, rank)
 
 def run():
