@@ -200,7 +200,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(1) * loss_robust
+    loss = loss_adv + float(2) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
@@ -238,7 +238,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # load checkpoint
     net.load_state_dict(checkpoint['net'])
     rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
     # upsampling for transformer
     upsample = True if args.network in transformer_list else False

@@ -21,7 +21,6 @@ parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
-args = parser.parse_args()
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -32,7 +31,7 @@ parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=8/255, type=float)
 parser.add_argument('--steps', default=30, type=int)
-
+args = parser.parse_args()
 
 def main_worker():
 
@@ -46,7 +45,11 @@ def main_worker():
     # init model
     net = get_network(network=args.network,
                       depth=args.depth,
-                      dataset=args.dataset).cuda()
+                      dataset=args.dataset,
+                      tran_type=args.tran_type,
+                      img_size=args.img_resize,
+                      patch_size=args.patch_size,
+                      pretrain=False).cuda()
     net.eval()
 
     # upsampling for transformer
