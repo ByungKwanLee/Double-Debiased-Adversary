@@ -301,13 +301,18 @@ class MixAttack(object):
 from attack.fastattack import attack_loader
 from tqdm import tqdm
 from torch.cuda.amp import autocast
-def test_whitebox(net, testloader, attack_list, eps, rank):
+def test_whitebox(net, dataset, testloader, attack_list, steps, eps, rank):
     net.eval()
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps, steps=30) \
-                                                                                if attack_name != 'plain' else None
+        if dataset == 'imagenet':
+            attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps/4, steps=steps) if attack_name != 'plain' else None
+        elif dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps/2, steps=steps) if attack_name != 'plain' else None
+        else:
+            attack_module[attack_name] = attack_loader(net=net, attack=attack_name, eps=eps, steps=steps) if attack_name != 'plain' else None
+
     for key in attack_module:
         total = 0
         correct = 0
