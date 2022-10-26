@@ -57,9 +57,6 @@ _, testloader, _ = get_fast_dataloader(dataset=args.dataset, train_batch_size=1,
 net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
                   img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
 net = net.cuda()
-net_G = get_network(network='unet', depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
-                  img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
-net_G = net_G.cuda()
 
 # checkpoint base tag
 base_tag = '' if args.base == 'standard' else '_' + args.base
@@ -70,16 +67,11 @@ if args.network in transformer_list:
 else:
     net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
 
-# gen_checkpoint_name = f'checkpoint/generator/{args.dataset}/{args.dataset}_generator_{args.network}{args.depth}_best.t7'
-
 # load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
-# gen_checkpoint = torch.load(gen_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net_G']
 
 print(f"[*] Loaded network params : {net_checkpoint_name.split('/')[-1]}")
-# print(f"[*] Loaded generator params : {gen_checkpoint_name.split('/')[-1]}")
 checkpoint_module(net_checkpoint, net)
-# checkpoint_module(gen_checkpoint, net_G)
 
 # init criterion
 criterion = nn.CrossEntropyLoss()
