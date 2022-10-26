@@ -2,6 +2,7 @@ import torch
 from models.vgg import vgg
 from models.resnet import resnet
 from models.wide import wide_resnet
+from models.dense import dense
 from models.vision_transformer import vit
 from models.distill_transformer import deit
 from models.swin_transformer import swin
@@ -33,6 +34,8 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
         model = resnet(depth=depth, dataset=dataset, mean=mean, std=std)
     elif network == 'wide':
         model = wide_resnet(depth=depth, widen_factor=10, dataset=dataset, mean=mean, std=std)
+    elif network == 'dense':
+        model = dense(depth=depth, dataset=dataset, mean=mean, std=std)
 
     # Transformer
     elif network == 'vit':
