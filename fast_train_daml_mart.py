@@ -137,7 +137,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             # DML loss
             dml_loss = dml_loss1 + dml_loss2
 
-
             # Total Loss
             loss = base_loss + dml_loss.abs()
 
