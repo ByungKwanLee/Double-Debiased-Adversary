@@ -22,11 +22,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='daml_adv', type=str)
+parser.add_argument('--network', default='deit', type=str)
+parser.add_argument('--depth', default=12, type=int)
+parser.add_argument('--base', default='mart', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='3', type=str)
+parser.add_argument('--gpu', default='0', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -315,9 +315,8 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    # clean_test()
-    # gen_test()
-    # if args.base != 'standard': adv_test()
-    measure_adversarial_drift()
+    clean_test()
+    if args.base != 'standard': adv_test()
+    # measure_adversarial_drift()
 
 
