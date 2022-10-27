@@ -19,8 +19,8 @@ class FastAPGD(Attack):
         self.eot_iter = eot_iter
         self.thr_decr = rho
         self._supported_mode = ['default']
-        self.scaler = GradScaler()  # for mixed precision gradient computation
-        self.scale = 0.1  # for mixed precision gradient computation
+        self.scaler = GradScaler()
+        self.scale = 1e-1
 
     def forward(self, images, labels):
         r"""
@@ -88,7 +88,7 @@ class FastAPGD(Attack):
                 # Update adversarial images with gradient scaler applied
                 scaled_loss = self.scaler.scale(loss)
 
-            grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach()  # 1 backward pass (eot_iter = 1)
+            grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach()/(scaled_loss/loss.detach())  # 1 backward pass (eot_iter = 1)
 
         grad /= float(self.eot_iter)
         grad_best = grad.clone()

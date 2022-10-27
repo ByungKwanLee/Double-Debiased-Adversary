@@ -35,7 +35,7 @@ parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12358", type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -86,19 +86,6 @@ if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
     saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv_{args.network}{args.depth}_best.t7'
-
-
-def dml_prob_func(pred, targets):
-    prob = pred.softmax(dim=1)
-    dml_prob = prob * get_onehot(pred, targets) + (1-prob) * (1-get_onehot(pred, targets))
-    return -(dml_prob+1e-4).log().sum(dim=1).mean()
-
-def dml_prob_func(pred, targets):
-    prob = pred.softmax(dim=1)
-
-    # all non-target
-    dml_prob = prob * get_onehot(pred, targets) + (1-prob) * (1-get_onehot(pred, targets))
-    return -dml_prob.log().sum(dim=1).mean()
 
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer):

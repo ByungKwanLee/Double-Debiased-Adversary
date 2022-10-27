@@ -6,15 +6,15 @@ from attack.libfastattack.FastMultiAttack import FastMultiAttack
 
 
 class FastAutoAttack(Attack):
-    def __init__(self, model, eps=.3, alpha_max=0.1, eta=1.05, beta=0.9, seed=None):
+    def __init__(self, model, eps=.3, steps=30, alpha_max=0.1,  eta=1.05, beta=0.9, seed=None):
         super().__init__("FastAutoAttack", model)
         self.eps = eps
         self.seed = seed
         self._supported_mode = ['default']
 
         self.autoattack = FastMultiAttack([
-            FastAPGD(model, eps=eps, seed=self.get_seed(), loss='ce'),
-            FastFAB(model, eps=eps, seed=self.get_seed(), alpha_max=alpha_max, eta=eta, gamma=0.1, beta=beta),
+            FastAPGD(model, eps=eps, seed=self.get_seed(), loss='ce', steps=steps),
+            FastFAB(model, eps=eps, seed=self.get_seed(), alpha_max=alpha_max, gamma=0.3, eta=eta, beta=beta),
         ])
 
 
