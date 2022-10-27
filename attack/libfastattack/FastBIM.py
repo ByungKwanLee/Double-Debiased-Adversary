@@ -23,8 +23,6 @@ class FastBIM(Attack):
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
 
-        if self._targeted:
-            target_labels = self._get_target_label(images, labels)
 
         loss = nn.CrossEntropyLoss()
 
@@ -36,12 +34,7 @@ class FastBIM(Attack):
             # Accelerating forward propagation
             with autocast():
                 outputs = self.model(images)
-
-                # Calculate loss
-                if self._targeted:
-                    cost = -loss(outputs, target_labels)
-                else:
-                    cost = loss(outputs, labels)
+                cost = loss(outputs, labels)
 
             # Update adversarial images with gradient scaler applied
             scaled_loss = self.scaler.scale(cost)

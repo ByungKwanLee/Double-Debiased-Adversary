@@ -1,6 +1,9 @@
 # Import built-in module
 import argparse
 import warnings
+
+import torch.nn
+
 warnings.filterwarnings(action='ignore')
 
 # Import torch
@@ -11,10 +14,9 @@ import torch.distributed as dist
 from utils.fast_network_utils import get_network
 from utils.fast_data_utils import get_fast_dataloader
 from utils.utils import *
-from utils.scheduler import WarmupCosineSchedule
+from tensorboardX import SummaryWriter
 
 # attack loader
-# from attack.attack import attack_loader
 from attack.fastattack import attack_loader
 
 # Accelerating forward and backward
@@ -28,27 +30,27 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--NAME', default='ADV', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=70, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12355", type=str)
+parser.add_argument('--NAME', default='DAML-ADV', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int) # 12 for vit
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
-parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
+parser.add_argument('--img_resize', default=224, type=int, help='32/224')
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
-parser.add_argument('--pretrain', default=True, type=bool)
 
 # learning parameter
-parser.add_argument('--epochs', default=30, type=int)
-parser.add_argument('--learning_rate', default=0.5, type=float) #3e-2 for ViT
+parser.add_argument('--epochs', default=10, type=int)
+parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
+parser.add_argument('--pretrain', default=False, type=bool)
 
 # attack parameter
 parser.add_argument('--attack', default='pgd', type=str)
@@ -71,35 +73,82 @@ best_acc = 0
 # Mix Training
 scaler = GradScaler()
 
+# Tensorboard settings
+counter = 0
+log_dir = './logs'
+check_dir(log_dir)
+
 # make checkpoint folder and set checkpoint name for saving
 if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
-if not os.path.isdir(f'checkpoint/adv'): os.mkdir(f'checkpoint/adv')
-if not os.path.isdir(f'checkpoint/adv/{args.dataset}'): os.mkdir(f'checkpoint/adv/{args.dataset}')
+if not os.path.isdir(f'checkpoint/daml_adv'): os.mkdir(f'checkpoint/daml_adv')
+if not os.path.isdir(f'checkpoint/daml_adv/{args.dataset}'): os.mkdir(f'checkpoint/daml_adv/{args.dataset}')
 if args.network in transformer_list:
-    saving_ckpt_name = f'./checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv__{args.network}{args.depth}_best.t7'
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
+
+def dml_prob_func(pred, targets):
+    prob = pred.softmax(dim=1)
+    dml_prob = prob * get_onehot(pred, targets) + (1-prob) * (1-get_onehot(pred, targets))
+    return -(dml_prob+1e-4).log().sum(dim=1).mean()
+
+def dml_prob_func(pred, targets):
+    prob = pred.softmax(dim=1)
+
+    # all non-target
+    dml_prob = prob * get_onehot(pred, targets) + (1-prob) * (1-get_onehot(pred, targets))
+    return -dml_prob.log().sum(dim=1).mean()
+
+
+def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer):
+    global counter
     net.train()
+
     train_loss = 0
-    correct = 0
-    total = 0
+    correct, adv_correct, g_correct = 0, 0, 0
+    total, total_g = 0, 0
 
-    desc = (f'[Train/LR={lr_scheduler.get_lr()[0]:.3f}] Loss: {0:.3f} | Acc: {0:.2f}')
-
-    prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), desc=desc, leave=True)
+    prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), leave=True)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs, targets = inputs.cuda(), targets.cuda()
-        inputs = attack(inputs, targets)
 
-        # Accelerating forward propagation
+        # clean sample splitting
+        inputs, targets = inputs.cuda(), targets.cuda()
+        adv_inputs = attack(inputs, targets)
+
+        # inputs
+        inputs1, inputs2 = inputs.split(args.batch_size // 2)
+        adv_inputs1, adv_inputs2 = adv_inputs.split(args.batch_size // 2)
+        targets1, targets2 = targets.split(args.batch_size // 2)
+
+        # f optimization
         optimizer.zero_grad()
         with autocast():
-            outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets)
+            # network propagation
+            adv_outputs1 = net(adv_inputs1)
+            base_loss = F.cross_entropy(adv_outputs1, targets1)
 
-        # Accelerating backward propagation.
+            # network propagation
+            adv_outputs2 = net(adv_inputs2)
+            outputs2 = net(inputs2)
+
+            # attack
+            is_attack2 = adv_outputs2.max(1)[1] != targets2
+            is_not_attack2 = ~is_attack2
+
+            # Theta: Target
+            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss = (Y_do_T-Y_do_g).abs()
+
+            # Theta: Target + Non-Target
+            # Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * dml_prob_func(adv_outputs2[is_attack2], targets2[is_attack2])
+            # Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * dml_prob_func(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            # dml_loss = (Y_do_T-Y_do_g).abs()
+
+            # Total Loss
+            loss = base_loss + dml_loss.abs()
+
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -107,24 +156,44 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
         # scheduling for Cyclic LR
         lr_scheduler.step()
 
-        train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        # tensorboard
+        # if rank == 0:
+        #     writer.add_scalar('Train_Loss_F/lossF', base_loss, counter)
+        #     writer.add_scalar('Train_Loss_D/lossD', dml_loss, counter)
+        #     writer.add_scalar('Train_Loss_D/lossD/Theta', Theta21 - Theta22, counter)
+        #     writer.add_scalar('Train_Loss_D/lossD/Theta2', Theta23 - Theta24, counter)
+        #     writer.add_scalar('Learning Rate/lr', lr_scheduler.get_last_lr()[0], counter)
+        #
+        #     counter += 1
 
-        desc = (f'[Train/LR={lr_scheduler.get_lr()[0]:.3f}] Loss: {train_loss/(batch_idx+1):.3f} | Acc: {100.*correct/total:.2f}')
+        train_loss += loss.item()
+
+        # for test
+        with autocast():
+
+            adv_outputs = net(adv_inputs)
+            outputs = net(inputs)
+
+        _, adv_predicted = adv_outputs.max(1)
+        _, predicted = outputs.max(1)
+
+        total += targets.size(0)
+        total_g += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
+        adv_correct += adv_predicted.eq(targets).sum().item()
+
+        desc = ('[Tr/lr=%.3f] Loss: (F/G) %.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
+                (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, testloader, attack, rank):
     global best_acc
     net.eval()
-
     test_loss = 0
-    correct = 0
+    correct, g_correct= 0, 0
     total = 0
 
-    desc = (f'[Test/Clean] Loss: {test_loss/(0+1):.3f} | Acc: {0:.2f}')
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
 
@@ -132,9 +201,9 @@ def test(net, testloader, attack, rank):
         with autocast():
             outputs = net(inputs)
             loss = F.cross_entropy(outputs, targets)
-
         test_loss += loss.item()
         _, predicted = outputs.max(1)
+
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
@@ -148,33 +217,36 @@ def test(net, testloader, attack, rank):
     correct = 0
     total = 0
 
-    desc = (f'[Test/PGD] Loss: {test_loss / (0 + 1):.3f} | Acc: {0:.2f}')
-    prog_bar = tqdm(enumerate(testloader), total=len(testloader), desc=desc, leave=False)
+
+    prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
-        inputs = attack(inputs, targets)
         inputs, targets = inputs.cuda(), targets.cuda()
+        adv_inputs = attack(inputs, targets)
 
         # Accerlating forward propagation
         with autocast():
+            adv_outputs = net(adv_inputs)
             outputs = net(inputs)
-            loss = F.cross_entropy(outputs, targets)
+            loss = F.cross_entropy(adv_outputs, targets)
+        _, adv_predicted = adv_outputs.max(1)
+        _, predicted = outputs.max(1)
 
         test_loss += loss.item()
-        _, predicted = outputs.max(1)
         total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        correct += adv_predicted.eq(targets).sum().item()
 
-        desc = (f'[Test/PGD] Loss: {test_loss / (batch_idx + 1):.3f} | Acc: {100. * correct / total:.2f}')
+        desc = ('[Test/PGD] Loss: %.3f | Acc: (F) %.3f%%'
+                % (test_loss / (batch_idx + 1), 100. * correct / total))
         prog_bar.set_description(desc, refresh=True)
 
     # Save adv acc.
     adv_acc = 100. * correct / total
 
     # compute acc
-    acc = (clean_acc + adv_acc)/2
+    acc = (clean_acc + adv_acc) / 2
 
     # current accuracy print
-    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{g_correct/total * 100:.2f}!!', rank)
 
     # saving checkpoint
     if acc > best_acc:
@@ -199,32 +271,26 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
-    # Load Plain Network
+    # Load ADV or Standard Network
     if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        pretrain_ckpt_name = f'checkpoint/standard/{args.dataset}/{args.dataset}_{args.network}{args.depth}_best.t7'
+        # adv
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
-
+    # network f
     # init model and Distributed Data Parallel
-    net = get_network(network=args.network,
-                      depth=args.depth,
-                      dataset=args.dataset,
-                      tran_type=args.tran_type,
-                      img_size=args.img_resize,
-                      patch_size=args.patch_size,
-                      pretrain=args.pretrain)
+    net = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
+                      img_size=args.img_resize, patch_size=args.patch_size, pretrain=args.pretrain)
     net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
-
-    # load checkpoint
     net.load_state_dict(checkpoint['net'])
-    rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint(f'==> Successfully Loaded Standard checkpoint..', rank)
 
+    rprint(f'==> {pretrain_ckpt_name}', rank)
+    rprint('==> Successfully Loaded Standard checkpoint..', rank)
 
     # upsampling for transformer
     upsample = True if args.network in transformer_list else False
@@ -252,17 +318,14 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
 
     # init optimizer and lr scheduler
+    # optimizer network concurrent
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
+                                                    step_size_up=int(round(args.epochs/5))*len(trainloader),
+                                                    step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/5))*len(trainloader))
 
-    #init optimizer and lr scheduler
-    if args.network in transformer_list:
-        lr_scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=args.num_steps)
-    else:
-        lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-        step_size_up=int(round(args.epochs/15))*len(trainloader),
-        step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/15))*len(trainloader))
+    writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
 
-    # training and testing
     for epoch in range(args.epochs):
         rprint(f'\nEpoch: {epoch+1}', rank)
         if args.dataset == "imagenet":
@@ -273,7 +336,8 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      start_ramp=int(math.floor(args.epochs * 0.5)),
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
+
+        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, writer)
         test(net, testloader, attack, rank)
 
 def run():

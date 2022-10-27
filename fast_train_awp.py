@@ -250,7 +250,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
-
+    # init proxy
     proxy = get_network(network=args.network,
                       depth=args.depth,
                       dataset=args.dataset,

@@ -22,11 +22,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int)
-parser.add_argument('--base', default='mart', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='daml_adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--gpu', default='3', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -65,7 +65,7 @@ base_tag = '' if args.base == 'standard' else '_' + args.base
 if args.network in transformer_list:
     net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}__{args.network}{args.depth}_best.t7'
 
 # load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
