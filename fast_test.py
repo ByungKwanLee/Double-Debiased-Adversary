@@ -315,8 +315,9 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    clean_test()
-    if args.base != 'standard': adv_test()
-    # measure_adversarial_drift()
+    # clean_test()
+    # gen_test()
+    # if args.base != 'standard': adv_test()
+    measure_adversarial_drift()
 
 
