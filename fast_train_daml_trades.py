@@ -85,7 +85,7 @@ if not os.path.isdir(f'checkpoint/daml_trades/{args.dataset}'): os.mkdir(f'check
 if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades__{args.network}{args.depth}_best.t7'
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
     global counter
@@ -119,14 +119,15 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
+            outputs2 = net(inputs2)
 
             # attack
             is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
             # Theta: Target
-            Y_do_T1 = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            Y_do_T1 = (targets2.shape[0] / is_attack2.sum()-1) * trades_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * trades_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
             dml_loss1 = Y_do_T1 - Y_do_g1
 
             # Theta: Non-Target
