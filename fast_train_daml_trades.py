@@ -114,15 +114,11 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             adv_outputs1 = net(adv_inputs1)
             outputs1 = net(inputs1)
 
-            # attack
-            is_attack1 = (adv_outputs1.max(1)[1] != targets1) * (outputs1.max(1)[1] == targets1)
-
             # base loss
-            base_loss = trades_loss_dml(outputs1, targets1, outputs1[is_attack1], adv_outputs1[is_attack1])
+            base_loss = trades_loss(outputs1, adv_outputs1, targets1)
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
-            outputs2 = net(inputs2)
 
             # attack
             is_attack2 = adv_outputs2.max(1)[1] != targets2
@@ -175,15 +171,8 @@ def trades_loss(logits,
                 logits_adv,
                 targets):
     criterion_kl = torch.nn.KLDivLoss(size_average=False)
-    loss_natural = F.cross_entropy(logits, targets)
+    loss_natural = F.cross_entropy(logits_adv, targets)
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
-    loss = loss_natural + float(2) * loss_robust
-    return loss
-
-def trades_loss_dml(logits, targets, logits_clean, logits_adv):
-    criterion_kl = torch.nn.KLDivLoss(size_average=False)
-    loss_natural = F.cross_entropy(logits, targets)
-    loss_robust = (1.0 / logits_clean.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits_clean, dim=1))
     loss = loss_natural + float(2) * loss_robust
     return loss
 

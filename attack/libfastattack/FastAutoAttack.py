@@ -14,7 +14,7 @@ class FastAutoAttack(Attack):
 
         self.autoattack = FastMultiAttack([
             FastAPGD(model, eps=eps, seed=self.get_seed(), loss='ce'),
-            FastFAB(model, eps=eps, seed=self.get_seed(), alpha_max=alpha_max, eta=eta, gamma=0, beta=beta),
+            FastFAB(model, eps=eps, seed=self.get_seed(), alpha_max=alpha_max, eta=eta, gamma=0.1, beta=beta),
         ])
 
 
