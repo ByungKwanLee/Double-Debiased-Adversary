@@ -75,7 +75,7 @@ def main_worker():
     if args.network in transformer_list:
         net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
     else:
-        net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
+        net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}__{args.network}{args.depth}_best.t7'
 
     rprint("This test : {}".format(net_checkpoint_name), 0)
     checkpoint = torch.load(net_checkpoint_name, map_location=torch.device(torch.cuda.current_device()))

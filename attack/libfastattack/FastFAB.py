@@ -16,13 +16,14 @@ from torchattacks.attack import Attack
 
 class FastFAB(Attack):
     def __init__(self, model, eps=8/255, n_restarts=1,
-                 alpha_max=0.1, eta=1.05, beta=0.9, seed=0):
+                 alpha_max=0.1, eta=1.05, beta=0.9, gamma=0.4, seed=0):
         super().__init__("FastFAB", model)
         self.n_restarts = n_restarts
         self.eps = eps
         self.alpha_max = alpha_max
         self.eta = eta
         self.beta = beta
+        self.gamma = gamma
         self.seed = seed
         self.target_class = None
         self.supported_mode = ['default', 'targeted']
@@ -130,7 +131,7 @@ class FastFAB(Attack):
             if use_rand_start:
                 t = 2 * torch.rand(x1.shape).to(self.device) - 1
                 x1 = im2 + (torch.min(res2,
-                                      self.eps *(1+4*self.alpha_max)* torch.ones(res2.shape)
+                                      self.eps *(1+self.gamma)* torch.ones(res2.shape)
                                       .to(self.device)
                                       ).reshape([-1, *[1]*self.ndims])
                             ) * t / (t.reshape([t.shape[0], -1]).abs()
@@ -252,7 +253,7 @@ class FastFAB(Attack):
             if use_rand_start:
                 t = 2 * torch.rand(x1.shape).to(self.device) - 1
                 x1 = im2 + (torch.min(res2,
-                                      self.eps * (1+4*self.alpha_max) * torch.ones(res2.shape)
+                                      self.eps * (1+self.gamma) * torch.ones(res2.shape)
                                       .to(self.device)
                                       ).reshape([-1, *[1]*self.ndims])
                             ) * t / (t.reshape([t.shape[0], -1]).abs()
@@ -350,7 +351,7 @@ class FastFAB(Attack):
                         with autocast():
                             acc_curr = self.model(adv_curr).max(1)[1] == y_to_fool
                         res = (x_to_fool - adv_curr).abs().reshape(x_to_fool.shape[0], -1).max(1)[0]
-                        acc_curr = torch.max(acc_curr, res > self.eps * (1+4*self.alpha_max))
+                        acc_curr = torch.max(acc_curr, res > self.eps * (1+self.gamma))
 
                         ind_curr = (acc_curr == 0).nonzero().squeeze()
                         acc[ind_to_fool[ind_curr]] = 0

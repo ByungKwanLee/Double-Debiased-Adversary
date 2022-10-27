@@ -104,7 +104,6 @@ I use python version 3.9, pytorch, torchvision, and cuda 11.3. For more differen
 * [VGG](https://arxiv.org/abs/1409.1556) *(model/vgg.py)*
 * [ResNet](https://arxiv.org/abs/1512.03385) *(model/resnet.py)*
 * [WideResNet](https://arxiv.org/abs/1605.07146) *(model/wide.py)*
-* [DenseNet](https://arxiv.org/abs/1608.06993) *(model/dense.py)*
 ---
 
 ## How to run

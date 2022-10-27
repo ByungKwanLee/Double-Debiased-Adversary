@@ -33,8 +33,8 @@ parser.add_argument('--NAME', default='DAML-TRADES', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12358", type=str)
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 
 # transformer parameter
@@ -87,7 +87,6 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}{args.depth}_best.t7'
 
-
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
     global counter
     net.train()
@@ -129,13 +128,21 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
-            # Theta
-            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss = (Y_do_T - Y_do_g).abs()
+            # Theta: Target
+            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss1 = Y_do_T - Y_do_g
+
+            # Theta: Non-Target
+            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss2 = Y_do_T - Y_do_g
+
+            # DML loss
+            dml_loss = dml_loss1 + dml_loss2
 
             # Total Loss
-            loss = base_loss + dml_loss
+            loss = base_loss + dml_loss.abs()
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -163,6 +170,15 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
         desc = ('[Tr/lr=%.3f] Loss: (F/G) %.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
+
+def trades_loss(logits,
+                logits_adv,
+                targets):
+    criterion_kl = torch.nn.KLDivLoss(size_average=False)
+    loss_natural = F.cross_entropy(logits, targets)
+    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
+    loss = loss_natural + float(2) * loss_robust
+    return loss
 
 def trades_loss_dml(logits, targets, logits_clean, logits_adv):
     criterion_kl = torch.nn.KLDivLoss(size_average=False)

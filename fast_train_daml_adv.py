@@ -137,14 +137,17 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
             is_not_attack2 = ~is_attack2
 
             # Theta: Target
-            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss = (Y_do_T-Y_do_g).abs()
+            Y_do_T1 = (targets2.shape[0] / is_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss1 = Y_do_T1 - Y_do_g1
 
-            # Theta: Target + Non-Target
-            # Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * dml_prob_func(adv_outputs2[is_attack2], targets2[is_attack2])
-            # Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * dml_prob_func(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            # dml_loss = (Y_do_T-Y_do_g).abs()
+            # Theta: Non-Target
+            Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss2 = Y_do_T2 - Y_do_g2
+
+            # DML loss
+            dml_loss = dml_loss1 + dml_loss2
 
             # Total Loss
             loss = base_loss + dml_loss.abs()

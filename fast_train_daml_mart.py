@@ -124,13 +124,22 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
-            # Theta
-            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss = (Y_do_T - Y_do_g).abs()
+            # Theta: Target
+            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss1 = Y_do_T - Y_do_g
+
+            # Theta: Non-Target
+            Y_do_T = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss2 = Y_do_T - Y_do_g
+
+            # DML loss
+            dml_loss = dml_loss1 + dml_loss2
+
 
             # Total Loss
-            loss = base_loss + dml_loss
+            loss = base_loss + dml_loss.abs()
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
