@@ -32,10 +32,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='DAML-ADV', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int) # 12 for vit
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--port', default="12358", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -85,7 +85,7 @@ if not os.path.isdir(f'checkpoint/daml_adv/{args.dataset}'): os.mkdir(f'checkpoi
 if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv__{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_adv/{args.dataset}/{args.dataset}_daml_adv_{args.network}{args.depth}_best.t7'
 
 
 def dml_prob_func(pred, targets):
@@ -130,7 +130,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
-            outputs2 = net(inputs2)
 
             # attack
             is_attack2 = adv_outputs2.max(1)[1] != targets2
