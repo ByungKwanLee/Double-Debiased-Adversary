@@ -93,7 +93,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
 
     train_loss = 0
-    correct, adv_correct, g_correct = 0, 0, 0
+    correct, adv_correct = 0, 0
     total, total_g = 0, 0
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), leave=True)
@@ -194,7 +194,7 @@ def test(net, testloader, attack, rank):
     global best_acc
     net.eval()
     test_loss = 0
-    correct, g_correct= 0, 0
+    correct = 0
     total = 0
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
@@ -250,7 +250,7 @@ def test(net, testloader, attack, rank):
     acc = (clean_acc + adv_acc) / 2
 
     # current accuracy print
-    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{g_correct/total * 100:.2f}!!', rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
 
     # saving checkpoint
     if acc > best_acc:
