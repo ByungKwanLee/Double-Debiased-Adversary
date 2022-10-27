@@ -1,18 +1,19 @@
 import torch
+import torch.nn.functional as F
 from torch.cuda.amp import GradScaler, autocast
 from torchattacks.attack import Attack
 
 class FastCWLinf(Attack):
 
-    def __init__(self, model, eps, scale, kappa=0, steps=1000):
+    def __init__(self, model, eps, kappa=0, steps=1000):
         super().__init__("FastCWLinf", model)
         self.eps = eps
         self.alpha = eps/steps * 2.3
         self.kappa = kappa
         self.steps = steps
-        self.scale = scale
         self._supported_mode = ['default', 'targeted']
-        self.scaler = GradScaler()
+        self.scaler = GradScaler()  #for mixed precision gradient computation
+        self.scale = 0.01 #for mixed precision gradient computation
 
     def forward(self, images, labels):
 
@@ -32,7 +33,7 @@ class FastCWLinf(Attack):
             # Accelerating forward propagation
             with autocast():
                 outputs = self.model(adv_images)
-                cost = self.scale * self.f(outputs, labels).sum()
+                cost =  -F.cross_entropy(outputs, labels) + self.scale*self.f(outputs, labels).sum()
 
             # Update adversarial images with gradient scaler applied
             scaled_loss = self.scaler.scale(cost)

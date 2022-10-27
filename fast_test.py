@@ -24,9 +24,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='adv', type=str)
+parser.add_argument('--base', default='daml_adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--gpu', default='3', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -65,7 +65,7 @@ base_tag = '' if args.base == 'standard' else '_' + args.base
 if args.network in transformer_list:
     net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}__{args.network}{args.depth}_best.t7'
 
 # load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
@@ -315,9 +315,9 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    clean_test()
+    # clean_test()
     # gen_test()
     # if args.base != 'standard': adv_test()
-    # measure_adversarial_drift()
+    measure_adversarial_drift()
 
 

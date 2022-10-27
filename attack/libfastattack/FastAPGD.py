@@ -8,19 +8,19 @@ from torchattacks.attack import Attack
 
 class FastAPGD(Attack):
 
-    def __init__(self, model, eps=8 / 255, scale=0.1, steps=100, n_restarts=1,
+    def __init__(self, model, eps=8 / 255, steps=100, n_restarts=1,
                  seed=0, loss='ce', eot_iter=1, rho=.75):
         super().__init__("FastAPGD", model)
         self.eps = eps
         self.steps = steps
-        self.scale = scale
         self.n_restarts = n_restarts
         self.seed = seed
         self.loss = loss
         self.eot_iter = eot_iter
         self.thr_decr = rho
         self._supported_mode = ['default']
-        self.scaler = GradScaler()
+        self.scaler = GradScaler()  # for mixed precision gradient computation
+        self.scale = 0.1  # for mixed precision gradient computation
 
     def forward(self, images, labels):
         r"""

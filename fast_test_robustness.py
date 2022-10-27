@@ -15,16 +15,18 @@ from utils.utils import *
 parser = argparse.ArgumentParser()
 
 # attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa']
-# attack_list = ['cw_linf', 'ap', 'dlr', 'aa' ]
-attack_list = ['cw', 'aa' ]
+attack_list = ['cw_linf', 'ap', 'dlr', 'fab', 'aa' ]
+# attack_list = ['cw_linf', 'aa' ]
+# attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'aa']
+# attack_list = ['aa']
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='daml_awp', type=str)
+parser.add_argument('--base', default='daml_adv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--gpu', default='6', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='7', type=str) # necessarily one gpu id!!!!
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -34,7 +36,7 @@ parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 # attack parameters
 parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=8/255, type=float)
-parser.add_argument('--steps', default=30, type=int)
+parser.add_argument('--steps', default=10, type=int)
 args = parser.parse_args()
 
 def main_worker():

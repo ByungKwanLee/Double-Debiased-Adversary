@@ -1,11 +1,12 @@
 import time
 from torchattacks.attack import Attack
 from attack.libfastattack.FastAPGD import FastAPGD
+from attack.libfastattack.FastFAB import FastFAB
 from attack.libfastattack.FastMultiAttack import FastMultiAttack
 
 
 class FastAutoAttack(Attack):
-    def __init__(self, model, eps=.3, seed=None):
+    def __init__(self, model, eps=.3, alpha_max=0.1, eta=1.05, beta=0.9, seed=None):
         super().__init__("FastAutoAttack", model)
         self.eps = eps
         self.seed = seed
@@ -13,7 +14,7 @@ class FastAutoAttack(Attack):
 
         self.autoattack = FastMultiAttack([
             FastAPGD(model, eps=eps, seed=self.get_seed(), loss='ce'),
-            FastAPGD(model, eps=eps, seed=self.get_seed(), loss='dlr'),
+            FastFAB(model, eps=eps, seed=self.get_seed(), alpha_max=alpha_max, eta=eta, beta=beta),
         ])
 
 
