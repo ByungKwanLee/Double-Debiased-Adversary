@@ -30,24 +30,24 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='MART', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--network', default='deit', type=str)
+parser.add_argument('--depth', default=12, type=int)
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--pretrain', default=False, type=bool)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--batch_size', default=64, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 
 # attack parameter
@@ -200,7 +200,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(2) * loss_robust
+    loss = loss_adv + float(4) * loss_robust
     return loss
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
