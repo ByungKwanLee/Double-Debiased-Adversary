@@ -85,7 +85,7 @@ if not os.path.isdir(f'checkpoint/daml_trades/{args.dataset}'): os.mkdir(f'check
 if args.network in transformer_list:
     saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades__{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}{args.depth}_best.t7'
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
     global counter
