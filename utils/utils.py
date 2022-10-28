@@ -418,13 +418,12 @@ class AdvWeightPerturb(object):
     def restore(self, diff):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
 
-
 def non_target_dml(pred, targets):
     prob = pred.softmax(dim=1)
 
     # all non-target
     non_target = (1-prob) * (1-get_onehot(pred, targets)) + get_onehot(pred, targets)
-    return -non_target.log().sum(dim=1).mean()
+    return -(non_target.log().sum(dim=1)/(prob.shape[1]-1)).mean()
 
 def adv_target_dml(pred, adv_targets):
     prob = pred.softmax(dim=1)
@@ -432,3 +431,4 @@ def adv_target_dml(pred, adv_targets):
     # all non-target
     non_target =  (1-prob) * get_onehot(pred, adv_targets)
     return -non_target.sum(dim=1).log().mean()
+

@@ -31,10 +31,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='DAML-AWP', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int) # 12 for vit
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12358", type=str)
+parser.add_argument('--port', default="12359", type=str)
 
 
 # transformer parameter
@@ -282,11 +282,11 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Load ADV or Standard Network
     if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        pretrain_ckpt_name = f'checkpoint/awp/{args.dataset}/{args.dataset}_awp_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        # adv
-        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
+        # awp
+        pretrain_ckpt_name = f'checkpoint/awp/{args.dataset}/{args.dataset}_awp_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
     # network f
@@ -299,7 +299,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    rprint('==> Successfully Loaded AWP checkpoint..', rank)
 
     # init proxy
     proxy = get_network(network=args.network,

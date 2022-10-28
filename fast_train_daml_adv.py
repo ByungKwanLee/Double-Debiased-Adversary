@@ -34,7 +34,7 @@ parser.add_argument('--NAME', default='DAML-ADV', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int) # 12 for vit
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
@@ -61,18 +61,6 @@ args = parser.parse_args()
 # the number of gpus for multi-process
 gpu_list = list(map(int, args.gpu.split(',')))
 ngpus_per_node = len(gpu_list)
-
-# split ratio
-if args.network == 'vgg':
-    d1_ratio = 8/16
-    d2_ratio = 1-d1_ratio
-elif args.network == 'resnet':
-    d1_ratio = 8/16
-    d2_ratio = 1 - d1_ratio
-elif args.network == 'wide':
-    d1_ratio = 8/16
-    d2_ratio = 1 - d1_ratio
-ratio = [int(args.batch_size * d1_ratio), int(args.batch_size * d2_ratio)]
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -116,9 +104,9 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
         adv_inputs = attack(inputs, targets)
 
         # inputs
-        inputs1, inputs2 = inputs.split(ratio)
-        adv_inputs1, adv_inputs2 = adv_inputs.split(ratio)
-        targets1, targets2 = targets.split(ratio)
+        inputs1, inputs2 = inputs.split(args.batch_size // 2)
+        adv_inputs1, adv_inputs2 = adv_inputs.split(args.batch_size // 2)
+        targets1, targets2 = targets.split(args.batch_size // 2)
 
         # f optimization
         optimizer.zero_grad()

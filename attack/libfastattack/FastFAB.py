@@ -16,7 +16,7 @@ from torchattacks.attack import Attack
 
 class FastFAB(Attack):
     def __init__(self, model, eps=8/255, n_restarts=1,
-                 alpha_max=0.1, eta=1.05, beta=0.9, gamma=0.4, seed=0):
+                 alpha_max=0.1, eta=1.05, beta=0.9, gamma=0.2, seed=0):
         super().__init__("FastFAB", model)
         self.n_restarts = n_restarts
         self.eps = eps
@@ -140,7 +140,7 @@ class FastFAB(Attack):
                 x1 = x1.clamp(0.0, 1.0)
 
             counter_iter = 0
-            while counter_iter < 3:
+            while counter_iter < 5:
                 with torch.no_grad():
                     df, dg = self.get_diff_logits_grads_batch(x1, la2)
                     dist1 = df.abs() / (1e-12 +
@@ -262,7 +262,7 @@ class FastFAB(Attack):
                 x1 = x1.clamp(0.0, 1.0)
 
             counter_iter = 0
-            while counter_iter < 3:
+            while counter_iter < 5:
                 with torch.no_grad():
                     df, dg = self.get_diff_logits_grads_batch_targeted(x1, la2, la_target2)
                     dist1 = df.abs() / (1e-12 +

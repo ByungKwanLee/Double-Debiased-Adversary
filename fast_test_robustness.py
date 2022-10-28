@@ -14,13 +14,15 @@ from utils.utils import *
 # fetch args
 parser = argparse.ArgumentParser()
 
-attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'fab', 'aa']
+# attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'fab', 'aa']
+attack_list = ['ap', 'dlr', 'fab', 'aa']
+# attack_list = ['dlr']
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--base', default='daml_awp', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=70, type=int)
+parser.add_argument('--base', default='awp', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
 parser.add_argument('--gpu', default='7', type=str) # necessarily one gpu id!!!!
 
