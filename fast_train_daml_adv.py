@@ -32,10 +32,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='DAML-ADV', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int) # 12 for vit
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=28, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -61,6 +61,18 @@ args = parser.parse_args()
 # the number of gpus for multi-process
 gpu_list = list(map(int, args.gpu.split(',')))
 ngpus_per_node = len(gpu_list)
+
+# split ratio
+if args.network == 'vgg':
+    d1_ratio = 8/16
+    d2_ratio = 1-d1_ratio
+elif args.network == 'resnet':
+    d1_ratio = 8/16
+    d2_ratio = 1 - d1_ratio
+elif args.network == 'wide':
+    d1_ratio = 8/16
+    d2_ratio = 1 - d1_ratio
+ratio = [int(args.batch_size * d1_ratio), int(args.batch_size * d2_ratio)]
 
 # cuda visible devices
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -104,9 +116,9 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
         adv_inputs = attack(inputs, targets)
 
         # inputs
-        inputs1, inputs2 = inputs.split(args.batch_size // 2)
-        adv_inputs1, adv_inputs2 = adv_inputs.split(args.batch_size // 2)
-        targets1, targets2 = targets.split(args.batch_size // 2)
+        inputs1, inputs2 = inputs.split(ratio)
+        adv_inputs1, adv_inputs2 = adv_inputs.split(ratio)
+        targets1, targets2 = targets.split(ratio)
 
         # f optimization
         optimizer.zero_grad()
@@ -128,7 +140,12 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
             dml_loss1 = Y_do_T1 - Y_do_g1
 
             # Theta: Non-Target
-            Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
+            # Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
+            # Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            # dml_loss2 = Y_do_T2 - Y_do_g2
+
+            # Theta: Adv-Target + Non-Target
+            Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
             Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
             dml_loss2 = Y_do_T2 - Y_do_g2
 

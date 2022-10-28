@@ -34,7 +34,7 @@ parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='resnet', type=str)
 parser.add_argument('--depth', default=18, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12347", type=str)
+parser.add_argument('--port', default="12358", type=str)
 
 
 # transformer parameter
@@ -134,8 +134,13 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             dml_loss1 = Y_do_T1 - Y_do_g1
 
             # Theta: Non-Target
-            Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            # Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
+            # Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            # dml_loss2 = Y_do_T2 - Y_do_g2
+
+            # Theta: Adv-Target + Non-Target
+            Y_do_T2 = (targets2.shape[0] / is_attack2.sum() - 1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
+            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum() - 1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
             dml_loss2 = Y_do_T2 - Y_do_g2
 
             # DML loss

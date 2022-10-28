@@ -31,7 +31,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--NAME', default='TRADES', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int)
+parser.add_argument('--depth', default=70, type=int)
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
