@@ -432,10 +432,3 @@ def adv_target_dml(pred, adv_targets):
     # all non-target
     non_target =  (1-prob) * get_onehot(pred, adv_targets)
     return -non_target.sum(dim=1).log().mean()
-
-def target_dml(pred, targets):
-    prob = pred.softmax(dim=1)
-
-    # all non-target
-    target =  prob * get_onehot(pred, targets)
-    return -target.sum(dim=1).log().mean()
