@@ -34,7 +34,7 @@ parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='wide', type=str)
 parser.add_argument('--depth', default=28, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12359", type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 
 # transformer parameter
@@ -133,11 +133,6 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
             dml_loss1 = Y_do_T1 - Y_do_g1
 
-            # Theta: Non-Target
-            # Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * non_target_dml(adv_outputs2[is_attack2], targets2[is_attack2])
-            # Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            # dml_loss2 = Y_do_T2 - Y_do_g2
-
             # Theta: Adv-Target + Non-Target
             Y_do_T2 = (targets2.shape[0] / is_attack2.sum() - 1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
             Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum() - 1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
@@ -192,7 +187,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(2) * loss_robust
+    loss = loss_adv + float(4) * loss_robust
     return loss
 
 def test(net, testloader, attack, rank):
@@ -282,11 +277,11 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
 
     # Load ADV or Standard Network
     if args.network in transformer_list:
-        pretrain_ckpt_name = f'checkpoint/awp/{args.dataset}/{args.dataset}_awp_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
         # awp
-        pretrain_ckpt_name = f'checkpoint/awp/{args.dataset}/{args.dataset}_awp_{args.network}{args.depth}_best.t7'
+        pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
     # network f
@@ -299,7 +294,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded AWP checkpoint..', rank)
+    rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
     # init proxy
     proxy = get_network(network=args.network,
@@ -314,7 +309,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
 
     # awp adversary
-    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=args.learning_rate, gamma=args.learning_rate, autocast=autocast,
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast,
                            GradScaler=GradScaler)
 
 

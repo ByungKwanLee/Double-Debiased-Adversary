@@ -263,7 +263,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
 
     # awp adversary
-    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=args.learning_rate, gamma=args.learning_rate, autocast=autocast, GradScaler=GradScaler)
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast, GradScaler=GradScaler)
 
     # upsampling for transformer
     upsample = True if args.network in transformer_list else False
