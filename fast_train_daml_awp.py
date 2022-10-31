@@ -30,11 +30,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='DAML-AWP', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=28, type=int) # 12 for vit
+parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12356", type=str)
+parser.add_argument('--port', default="12358", type=str)
 
 
 # transformer parameter
@@ -187,7 +187,7 @@ def mart_loss(logits,
     true_probs = torch.gather(nat_probs, 1, (targets.unsqueeze(1)).long()).squeeze()
     loss_robust = (1.0 / logits.shape[0]) * torch.sum(
         torch.sum(kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-    loss = loss_adv + float(4) * loss_robust
+    loss = loss_adv + float(2) * loss_robust
     return loss
 
 def test(net, testloader, attack, rank):

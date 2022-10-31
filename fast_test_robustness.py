@@ -14,17 +14,18 @@ from utils.utils import *
 # fetch args
 parser = argparse.ArgumentParser()
 
-attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'fab', 'aa']
+# attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'fab', 'aa']
 # attack_list = ['ap', 'dlr', 'fab', 'aa']
 # attack_list = ['dlr']
+attack_list = ['pgd']
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int)
-parser.add_argument('--base', default='daml_adv', type=str)
+parser.add_argument('--dataset', default='imagenet', type=str)
+parser.add_argument('--network', default='resnet', type=str)
+parser.add_argument('--depth', default=18, type=int)
+parser.add_argument('--base', default='standard', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
-parser.add_argument('--gpu', default='1', type=str) # necessarily one gpu id!!!!
+parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -73,7 +74,7 @@ def main_worker():
     if args.network in transformer_list:
         net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
     else:
-        net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best_backup.t7'
+        net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
 
     rprint("This test : {}".format(net_checkpoint_name), 0)
     checkpoint = torch.load(net_checkpoint_name, map_location=torch.device(torch.cuda.current_device()))

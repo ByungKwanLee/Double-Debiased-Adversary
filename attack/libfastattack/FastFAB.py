@@ -16,7 +16,7 @@ from torchattacks.attack import Attack
 
 class FastFAB(Attack):
     def __init__(self, model, eps=8/255, n_restarts=1,
-                 alpha_max=0.1, eta=1.05, beta=0.9, gamma=0.2, seed=0):
+                 alpha_max=0.1, eta=1.05, beta=0.9, gamma=0.3, seed=0):
         super().__init__("FastFAB", model)
         self.n_restarts = n_restarts
         self.eps = eps
