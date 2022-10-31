@@ -30,9 +30,9 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='TRADES', type=str)
 parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='tnt', type=str)
-parser.add_argument('--depth', default=12, type=int)
-parser.add_argument('--gpu', default='0,1,2', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=70, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12355", type=str)
 
 # transformer parameter
@@ -47,7 +47,7 @@ parser.add_argument('--pretrain', default=False, type=bool)
 parser.add_argument('--epochs', default=10, type=int)
 parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT # 0.01
 parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--batch_size', default=64, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
 
 # attack parameter
@@ -189,6 +189,7 @@ def test(net, testloader, attack, rank):
         # update best acc
         best_acc = acc
 
+# for trade loss with no modification
 def trades_loss(logits,
                 logits_adv,
                 targets):
@@ -197,6 +198,7 @@ def trades_loss(logits,
     loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
     loss = loss_natural + float(2) * loss_robust
     return loss
+
 
 def main_worker(rank, ngpus_per_node=ngpus_per_node):
 

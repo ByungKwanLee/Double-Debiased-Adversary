@@ -319,6 +319,7 @@ def test_whitebox(net, dataset, testloader, attack_list, steps, eps, rank):
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
         for batch_idx, (inputs, targets) in prog_bar:
             inputs, targets = inputs.cuda(), targets.cuda()
+
             if key != 'plain':
                 inputs = attack_module[key](inputs, targets)
             with autocast():
@@ -328,19 +329,30 @@ def test_whitebox(net, dataset, testloader, attack_list, steps, eps, rank):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
+            # fast eval
+            if dataset == 'imagenet' or key == 'cw_linf' or key == 'fab' or key == 'aa':
+                if batch_idx >= int(len(testloader) * 0.2):
+                    break
+
+
             desc = ('[White-Box-Test/%s] Acc: %.2f%% (%d/%d)'
                     % (key, 100. * correct / total, correct, total))
             prog_bar.set_description(desc, refresh=True)
 
         rprint(f'{key}: {100. * correct / total:.2f}%', rank)
 
-def test_blackbox(plain_net, adv_net, testloader, attack_list, eps, rank):
+def test_blackbox(plain_net, adv_net, dataset, testloader, attack_list, steps, eps, rank):
     plain_net.eval()
     adv_net.eval()
 
     attack_module = {}
     for attack_name in attack_list:
-        attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=eps, steps=30)
+        if dataset == 'imagenet':
+            attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=eps/4, steps=steps) if attack_name != 'plain' else None
+        elif dataset == 'tiny':
+            attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=eps/2, steps=steps) if attack_name != 'plain' else None
+        else:
+            attack_module[attack_name] = attack_loader(net=plain_net, attack=attack_name, eps=eps, steps=steps) if attack_name != 'plain' else None
 
     for key in attack_module:
         total = 0
@@ -356,6 +368,11 @@ def test_blackbox(plain_net, adv_net, testloader, attack_list, eps, rank):
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
+
+            # fast eval
+            if dataset == 'imagenet' or key == 'fab' or key == 'aa':
+                if batch_idx >= int(len(testloader) * 0.2):
+                    break
 
             desc = ('[Black-Box-Test/%s] Acc: %.2f%% (%d/%d)'
                     % (key, 100. * correct / total, correct, total))
@@ -418,11 +435,17 @@ class AdvWeightPerturb(object):
     def restore(self, diff):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
 
-# Causal Package
-def causal_loss(logits_adv, logits_inv):
-    KL = lambda x, y: (x.softmax(dim=1) * (x.softmax(dim=1).log() - y.softmax(dim=1).log())).sum(dim=1)
-    return (KL(logits_adv, logits_inv)).mean()
+def non_target_dml(pred, targets):
+    prob = pred.softmax(dim=1)
 
-def normalize_clip(feature, eps):
-    scale = eps / torch.abs(feature).detach()
-    return torch.minimum(torch.ones_like(scale), scale)
+    # all non-target
+    non_target = (1-prob) * (1-get_onehot(pred, targets)) + get_onehot(pred, targets)
+    return -(non_target.log().sum(dim=1)/(prob.shape[1]-1)).mean()
+
+def adv_target_dml(pred, adv_targets):
+    prob = pred.softmax(dim=1)
+
+    # all non-target
+    non_target =  (1-prob) * get_onehot(pred, adv_targets)
+    return -non_target.sum(dim=1).log().mean()
+

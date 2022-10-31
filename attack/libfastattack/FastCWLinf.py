@@ -12,8 +12,8 @@ class FastCWLinf(Attack):
         self.kappa = kappa
         self.steps = steps
         self._supported_mode = ['default', 'targeted']
-        self.scaler = GradScaler()  #for mixed precision gradient computation
-        self.scale = 0.01 #for mixed precision gradient computation
+        self.scaler = GradScaler()
+        self.scale = 1e-3
 
     def forward(self, images, labels):
 

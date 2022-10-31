@@ -41,7 +41,7 @@ def attack_loader(net, attack, eps, steps):
         return FastFAB(model=net, eps=eps, alpha_max=0.1, eta=1.05, beta=0.9)
 
     elif attack == "aa":
-        return FastAutoAttack(model=net, eps=eps, alpha_max=0.1, eta=1.05, beta=0.9)
+        return FastAutoAttack(model=net, eps=eps, steps=steps, alpha_max=0.1, eta=1.05, beta=0.9)
 
 
 

@@ -30,11 +30,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='DAML-AWP', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='cifar100', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12359", type=str)
+parser.add_argument('--port', default="12358", type=str)
 
 
 # transformer parameter
@@ -93,7 +93,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
 
     train_loss = 0
-    correct, adv_correct, g_correct = 0, 0, 0
+    correct, adv_correct = 0, 0
     total, total_g = 0, 0
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), leave=True)
@@ -128,13 +128,21 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
-            # Theta
-            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss = (Y_do_T - Y_do_g).abs()
+            # Theta: Target
+            Y_do_T1 = (targets2.shape[0] / is_attack2.sum()-1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss1 = Y_do_T1 - Y_do_g1
+
+            # Theta: Adv-Target + Non-Target
+            Y_do_T2 = (targets2.shape[0] / is_attack2.sum() - 1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
+            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum() - 1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss2 = Y_do_T2 - Y_do_g2
+
+            # DML loss
+            dml_loss = dml_loss1 + dml_loss2
 
             # Total Loss
-            loss = base_loss + dml_loss
+            loss = base_loss + dml_loss.abs()
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -186,7 +194,7 @@ def test(net, testloader, attack, rank):
     global best_acc
     net.eval()
     test_loss = 0
-    correct, g_correct= 0, 0
+    correct = 0
     total = 0
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
@@ -242,7 +250,7 @@ def test(net, testloader, attack, rank):
     acc = (clean_acc + adv_acc) / 2
 
     # current accuracy print
-    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{g_correct/total * 100:.2f}!!', rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
 
     # saving checkpoint
     if acc > best_acc:
@@ -272,7 +280,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        # adv
+        # awp
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
@@ -286,7 +294,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
     # init proxy
     proxy = get_network(network=args.network,
@@ -301,7 +309,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
 
     # awp adversary
-    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=args.learning_rate, gamma=args.learning_rate, autocast=autocast,
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast,
                            GradScaler=GradScaler)
 
 

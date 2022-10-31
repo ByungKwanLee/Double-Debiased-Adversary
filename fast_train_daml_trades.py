@@ -31,11 +31,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='DAML-TRADES', type=str)
 parser.add_argument('--dataset', default='cifar100', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2', type=str)
-parser.add_argument('--port', default="12358", type=str)
-
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int) # 12 for vit
+parser.add_argument('--gpu', default='4,5,6,7', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -87,13 +86,12 @@ if args.network in transformer_list:
 else:
     saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}{args.depth}_best.t7'
 
-
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
     global counter
     net.train()
 
     train_loss = 0
-    correct, adv_correct, g_correct = 0, 0, 0
+    correct, adv_correct = 0, 0
     total, total_g = 0, 0
 
     prog_bar = tqdm(enumerate(trainloader), total=len(trainloader), leave=True)
@@ -115,11 +113,8 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             adv_outputs1 = net(adv_inputs1)
             outputs1 = net(inputs1)
 
-            # attack
-            is_attack1 = (adv_outputs1.max(1)[1] != targets1) * (outputs1.max(1)[1] == targets1)
-
             # base loss
-            base_loss = trades_loss_dml(outputs1, targets1, outputs1[is_attack1], adv_outputs1[is_attack1])
+            base_loss = trades_loss(outputs1, adv_outputs1, targets1)
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
@@ -129,13 +124,21 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
             is_attack2 = adv_outputs2.max(1)[1] != targets2
             is_not_attack2 = ~is_attack2
 
-            # Theta
-            Y_do_T = (targets2.shape[0] / is_attack2.sum() - 1) * F.cross_entropy(adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g = (targets2.shape[0] / is_not_attack2.sum() - 1) * F.cross_entropy(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss = (Y_do_T - Y_do_g).abs()
+            # Theta: Target
+            Y_do_T1 = (targets2.shape[0] / is_attack2.sum()-1) * trades_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
+            Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * trades_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss1 = Y_do_T1 - Y_do_g1
+
+            # Theta: Adv-Target + Non-Target
+            Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
+            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            dml_loss2 = Y_do_T2 - Y_do_g2
+
+            # DML loss
+            dml_loss = dml_loss1 + dml_loss2
 
             # Total Loss
-            loss = base_loss + dml_loss
+            loss = base_loss + dml_loss.abs()
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -164,10 +167,12 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
 
-def trades_loss_dml(logits, targets, logits_clean, logits_adv):
+def trades_loss(logits,
+                logits_adv,
+                targets):
     criterion_kl = torch.nn.KLDivLoss(size_average=False)
-    loss_natural = F.cross_entropy(logits, targets)
-    loss_robust = (1.0 / logits_clean.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits_clean, dim=1))
+    loss_natural = F.cross_entropy(logits_adv, targets)
+    loss_robust = (1.0 / logits.shape[0]) * criterion_kl(F.log_softmax(logits_adv, dim=1), F.softmax(logits, dim=1))
     loss = loss_natural + float(2) * loss_robust
     return loss
 
@@ -175,7 +180,7 @@ def test(net, testloader, attack, rank):
     global best_acc
     net.eval()
     test_loss = 0
-    correct, g_correct= 0, 0
+    correct= 0
     total = 0
 
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
@@ -231,7 +236,7 @@ def test(net, testloader, attack, rank):
     acc = (clean_acc + adv_acc) / 2
 
     # current accuracy print
-    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}/{g_correct/total * 100:.2f}!!', rank)
+    rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
 
     # saving checkpoint
     if acc > best_acc:
@@ -275,7 +280,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net.load_state_dict(checkpoint['net'])
 
     rprint(f'==> {pretrain_ckpt_name}', rank)
-    rprint('==> Successfully Loaded Standard checkpoint..', rank)
+    rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
     # upsampling for transformer
     upsample = True if args.network in transformer_list else False

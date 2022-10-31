@@ -21,10 +21,10 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='tiny', type=str)
-parser.add_argument('--network', default='deit', type=str)
-parser.add_argument('--depth', default=12, type=int)
-parser.add_argument('--base', default='awp', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--network', default='wide', type=str)
+parser.add_argument('--depth', default=70, type=int)
+parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
 parser.add_argument('--gpu', default='3', type=str)
 
@@ -317,8 +317,8 @@ def measure_adversarial_drift():
         print("ok")
 
 if __name__ == '__main__':
-    clean_test()
-    if args.base != 'standard': adv_test()
-    # measure_adversarial_drift()
+    # clean_test()
+    # if args.base != 'standard': adv_test()
+    measure_adversarial_drift()
 
 
