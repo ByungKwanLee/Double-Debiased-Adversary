@@ -21,15 +21,15 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
 parser.add_argument('--network', default='deit', type=str)
 parser.add_argument('--depth', default=12, type=int)
-parser.add_argument('--base', default='mart', type=str)
+parser.add_argument('--base', default='awp', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--gpu', default='3', type=str)
 
 # transformer parameter
-parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 
@@ -65,7 +65,7 @@ base_tag = '' if args.base == 'standard' else '_' + args.base
 if args.network in transformer_list:
     net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}__{args.network}{args.depth}_best.t7'
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
 
 # load checkpoint
 net_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
@@ -311,6 +311,8 @@ def measure_adversarial_drift():
 
         num_matrix = drift_matrix / class_num(args.dataset)[1]
         conf_matrix = pred_matrix / drift_matrix
+
+        print(num_matrix.diag().cpu().numpy())
 
         print("ok")
 

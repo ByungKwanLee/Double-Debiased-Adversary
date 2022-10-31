@@ -34,26 +34,15 @@ from timm.models.resnet import resnet26d, resnet50d
 from timm.models.registry import register_model
 
 
-def _cfg(url='', **kwargs):
-    return {
-        'url': url,
-        'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
-        'crop_pct': .9, 'interpolation': 'bicubic',
-        'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
-        'first_conv': 'patch_embed.proj', 'classifier': 'head',
-        **kwargs
-    }
-
-
-default_cfgs = {
-    'tnt_s_patch16_224': _cfg(
-        mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5),
-    ),
-    'tnt_b_patch16_224': _cfg(
-        mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5),
-    ),
-}
-
+# def _cfg(url='', **kwargs):
+#     return {
+#         'url': url,
+#         'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
+#         'crop_pct': .9, 'interpolation': 'bicubic',
+#         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
+#         'first_conv': 'patch_embed.proj', 'classifier': 'head',
+#         **kwargs
+#     }
 
 def make_divisible(v, divisor=8, min_value=None):
     min_value = min_value or divisor
@@ -346,15 +335,8 @@ def tnt_b(depth, dataset, tnt_type, img_size, patch_size, pretrained=False, mean
     else:
         raise NotImplementedError
 
-    if tnt_type == 'base':
-        embed_dim = 640
-        num_heads = 10
-        in_dim = 40
-
-    else:
-        raise NotImplementedError
     #patch_size=patch_size, embed_dim=embed_dim, depth=depth, num_heads=num_heads, in_dim=in_dim,cl
-    model_kwargs = dict( num_classes=num_classes, mean=mean, std=std)
+    model_kwargs = dict(num_classes=num_classes, mean=mean, std=std)
 
     model = tnt_b_patch16_224(pretrained=pretrained, **model_kwargs)
 
@@ -373,8 +355,8 @@ def tnt_b_patch16_224(pretrained=False, **kwargs):
     model = TNT(img_size=224, patch_size=patch_size, outer_dim=outer_dim, inner_dim=inner_dim, depth=12,
                 outer_num_heads=outer_num_heads, inner_num_heads=inner_num_heads, qkv_bias=False,
                 inner_stride=inner_stride, **kwargs)
-    model.default_cfg = default_cfgs['tnt_b_patch16_224']
-    if pretrained:
-        load_pretrained(
-            model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
+
+    # if pretrained:
+    #     load_pretrained(
+    #         model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
     return model

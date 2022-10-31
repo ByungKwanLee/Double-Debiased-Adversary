@@ -29,16 +29,16 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='MART', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='deit', type=str)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='tnt', type=str)
 parser.add_argument('--depth', default=12, type=int)
-parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--port', default="12357", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
-parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--pretrain', default=False, type=bool)
