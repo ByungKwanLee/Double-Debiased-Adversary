@@ -21,15 +21,15 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='wide', type=str)
-parser.add_argument('--depth', default=70, type=int)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='3', type=str)
+parser.add_argument('--gpu', default='0', type=str)
 
 # transformer parameter
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 
@@ -313,12 +313,13 @@ def measure_adversarial_drift():
         conf_matrix = pred_matrix / drift_matrix
 
         print(num_matrix.diag().cpu().numpy())
-
+        # np.sort(num_matrix.diag().cpu().numpy())[:3].mean()
+        # np.sort(num_matrix.diag().cpu().numpy())[-3:].mean()
+        # np.sort(num_matrix.diag().cpu().numpy())[:3].mean(), np.sort(num_matrix.diag().cpu().numpy())[-3:].mean()
         print("ok")
 
 if __name__ == '__main__':
     # clean_test()
     # if args.base != 'standard': adv_test()
     measure_adversarial_drift()
-
 

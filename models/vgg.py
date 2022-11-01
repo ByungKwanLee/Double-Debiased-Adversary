@@ -79,5 +79,7 @@ def vgg(depth, dataset, mean, std):
         num_classes = 200
     elif dataset == 'imagenet':
         num_classes = 1000
+    else:
+        num_classes = 1000
 
     return VGG(features=make_layers(cfgs[depth], batch_norm=True), num_classes=num_classes, mean=mean, std=std)

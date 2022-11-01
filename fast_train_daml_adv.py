@@ -46,7 +46,7 @@ parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=128, type=float)
@@ -127,12 +127,12 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
             dml_loss1 = Y_do_T1 - Y_do_g1
 
             # Theta: Adv-Target + Non-Target
-            Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
-            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss2 = Y_do_T2 - Y_do_g2
+            # Y_do_T2 = (targets2.shape[0] / is_attack2.sum()-1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
+            # Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum()-1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
+            # dml_loss2 = Y_do_T2 - Y_do_g2
 
             # DML loss
-            dml_loss = dml_loss1 + dml_loss2
+            dml_loss = dml_loss1# + dml_loss2
 
             # Total Loss
             loss = base_loss + dml_loss.abs()

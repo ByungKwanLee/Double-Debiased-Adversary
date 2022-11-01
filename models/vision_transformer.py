@@ -674,7 +674,7 @@ def vit(depth, dataset, vit_type, img_size, patch_size, pretrained=False, mean=N
     elif dataset == 'imagenet':
         num_classes = 1000
     else:
-        raise NotImplementedError
+        num_classes = 1000
 
     if vit_type == 'tiny':
         embed_dim = 192

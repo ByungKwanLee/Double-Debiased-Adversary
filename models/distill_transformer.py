@@ -202,7 +202,7 @@ def deit(depth, dataset, deit_type, img_size, patch_size, pretrained=False, mean
         num_classes = 1000
 
     else:
-        raise NotImplementedError
+        num_classes = 1000
 
     if deit_type == 'tiny':
         embed_dim = 192

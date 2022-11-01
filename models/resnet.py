@@ -253,7 +253,7 @@ def resnet(depth=18, dataset='imagenet', mean=None, std=None):
     elif dataset == 'imagenet':
         num_classes = 1000
     else:
-        raise NotImplementedError
+        num_classes = 1000
 
     if depth == 18:
         block = BasicBlock

@@ -196,7 +196,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
 
         # for large dataset
         loaders = {}
-        loaders['traing'] = None
+        loaders['train'] = None
         loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
                                  num_workers=num_workers, order=order, drop_last=False, os_cache=True,
                                  distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
@@ -228,7 +228,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
 
         # for large dataset
         loaders = {}
-        loaders['traing'] = None
+        loaders['train'] = None
         loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
                                num_workers=num_workers, order=order, drop_last=False, os_cache=True,
                                distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
@@ -263,7 +263,7 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
 
         # for large dataset
         loaders = {}
-        loaders['traing'] = None
+        loaders['train'] = None
         loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
                                  num_workers=num_workers, order=order, drop_last=False, os_cache=True,
                                  distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
@@ -310,6 +310,41 @@ def get_fast_dataloader(dataset, train_batch_size, test_batch_size, num_workers=
 
     return loaders['train'], loaders['test'], decoder
 
+def get_fast_dataloader_c(test_batch_size, num_workers=20, dist=True, shuffle=False, category=None, sub_category=None, degree_number=None):
+
+    gpu = f'cuda:{torch.cuda.current_device()}'
+    decoder = None
+    orgin_size = 256
+    test_size = 224
+
+    paths = {
+        'test': f'/mnt/hard1/lbk/imagenet-c/{category}/{sub_category}/{degree_number}.beton',
+    }
+
+    image_pipeline: List[Operation] = [CenterCropRGBImageDecoder((test_size, test_size), test_size / orgin_size)]
+    label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), Squeeze(),
+                                       ToDevice_modified(torch.device(gpu), non_blocking=True)]
+
+    image_pipeline.extend([
+        ToTensor(),
+        ToDevice_modified(torch.device(gpu), non_blocking=True),
+        ToTorchImage(),
+        Normalize_and_Convert(torch.float16, True)
+    ])
+    if shuffle:
+        order = OrderOption.SEQUENTIAL
+    else:
+        order = OrderOption.RANDOM
+
+    # for large dataset
+    loaders = {}
+    loaders['train'] = None
+    loaders['test'] = Loader(paths['test'], batch_size=test_batch_size,
+                             num_workers=num_workers, order=order, drop_last=False, os_cache=True,
+                             distributed=dist, pipelines={'image': image_pipeline, 'label': label_pipeline},
+                             seed=0)
+
+    return loaders['train'], loaders['test'], decoder
 
 
 

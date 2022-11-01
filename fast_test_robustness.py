@@ -16,15 +16,16 @@ parser = argparse.ArgumentParser()
 
 # attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'fab', 'aa']
 # attack_list = ['ap', 'dlr', 'fab', 'aa']
-# attack_list = ['dlr']
-attack_list = ['pgd']
+attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr']
+# attack_list = ['fab', 'aa']
+# attack_list = ['pgd']
 
 # model parameter
-parser.add_argument('--dataset', default='imagenet', type=str)
-parser.add_argument('--network', default='resnet', type=str)
-parser.add_argument('--depth', default=18, type=int)
-parser.add_argument('--base', default='standard', type=str)
-parser.add_argument('--batch_size', default=256, type=float)
+parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--network', default='vit', type=str)
+parser.add_argument('--depth', default=12, type=int)
+parser.add_argument('--base', default='awp', type=str)
+parser.add_argument('--batch_size', default=32, type=float)
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 
 # transformer parameter
@@ -37,6 +38,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=8/255, type=float)
 parser.add_argument('--steps', default=30, type=int)
 args = parser.parse_args()
+
 
 def main_worker():
 
