@@ -21,12 +21,12 @@ from utils.utils import str2bool
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--gpu', default='0', type=str)
+parser.add_argument('--gpu', default='1', type=str)
 
 # transformer parameter
 parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
@@ -312,11 +312,11 @@ def measure_adversarial_drift():
         num_matrix = drift_matrix / class_num(args.dataset)[1]
         conf_matrix = pred_matrix / drift_matrix
 
-        print(num_matrix.diag().cpu().numpy())
+        print(num_matrix.diag().cpu().numpy().std())
         # np.sort(num_matrix.diag().cpu().numpy())[:3].mean()
         # np.sort(num_matrix.diag().cpu().numpy())[-3:].mean()
         # np.sort(num_matrix.diag().cpu().numpy())[:3].mean(), np.sort(num_matrix.diag().cpu().numpy())[-3:].mean()
-        print("ok")
+        # print("ok")
 
 if __name__ == '__main__':
     # clean_test()

@@ -22,7 +22,6 @@ parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='adv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
-
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 
 # transformer parameter
