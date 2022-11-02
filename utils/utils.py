@@ -330,9 +330,8 @@ def test_whitebox(net, dataset, testloader, attack_list, steps, eps, rank):
             correct += predicted.eq(targets).sum().item()
 
             # fast eval
-            if dataset == 'imagenet' or key == 'cw_linf' or key == 'fab' or key == 'aa':
-                if batch_idx >= int(len(testloader) * 0.2):
-                    break
+            if batch_idx >= int(len(testloader) * 0.2):
+                break
 
 
             desc = ('[White-Box-Test/%s] Acc: %.2f%% (%d/%d)'
