@@ -15,9 +15,6 @@ from utils.utils import *
 parser = argparse.ArgumentParser()
 
 attack_list = ['plain', 'fgsm', 'pgd', 'cw_linf', 'ap', 'dlr', 'fab', 'aa']
-# attack_list = ['ap', 'dlr', 'fab', 'aa']
-# attack_list = ['dlr']
-# attack_list = ['pgd']
 
 # model parameter
 parser.add_argument('--dataset', default='tiny', type=str)
@@ -25,6 +22,7 @@ parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int)
 parser.add_argument('--base', default='daml_adv', type=str)
 parser.add_argument('--batch_size', default=256, type=float)
+
 parser.add_argument('--gpu', default='0', type=str) # necessarily one gpu id!!!!
 
 # transformer parameter
@@ -37,6 +35,7 @@ parser.add_argument('--attack', default='pgd', type=str)
 parser.add_argument('--eps', default=8/255, type=float)
 parser.add_argument('--steps', default=30, type=int)
 args = parser.parse_args()
+
 
 def main_worker():
 

@@ -371,20 +371,23 @@ def cait(depth, dataset, cait_type, img_size, patch_size, pretrained=False, mean
     else:
         raise NotImplementedError
 
-    if cait_type == 'xxs':
+    if cait_type == 'xxsmall':
         embed_dim = 192
         num_heads = 4
         init_values = 1e-5
-    elif cait_type == 's':
+        tran_type = 'xxs'
+
+    elif cait_type == 'small':
         embed_dim = 384
         num_heads = 8
         init_values = 1e-5
+        tran_type = 's'
     else:
         raise NotImplementedError
 
     model_kwargs = dict(patch_size=patch_size, embed_dim=embed_dim, depth=depth, num_heads=num_heads, init_values=init_values, num_classes=num_classes, mean=mean, std=std)
 
-    model = _create_cait('cait_%s%d_%d'%(cait_type, depth, img_size), pretrained=pretrained, **model_kwargs)
+    model = _create_cait('cait_%s%d_%d'%(tran_type, depth, img_size), pretrained=pretrained, **model_kwargs)
 
     return model
 

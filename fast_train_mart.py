@@ -38,7 +38,7 @@ parser.add_argument('--port', default="12356", type=str)
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
 parser.add_argument('--img_resize', default=224, type=int, help='default/224/384')
-parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--pretrain', default=False, type=bool)
