@@ -1,6 +1,7 @@
 # Import built-in module
 import argparse
 import warnings
+from random import randint
 
 import torch.nn
 
@@ -30,12 +31,11 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--NAME', default='DAML-AWP', type=str)
-parser.add_argument('--dataset', default='cifar100', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
 parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12358", type=str)
-
+parser.add_argument('--port', default="12003", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -46,7 +46,7 @@ parser.add_argument("--num_steps", default=10000, type=int)
 
 # learning parameter
 parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--learning_rate', default=0.01, type=float) #3e-2 for ViT
+parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--test_batch_size', default=64, type=float)
@@ -63,6 +63,7 @@ gpu_list = list(map(int, args.gpu.split(',')))
 ngpus_per_node = len(gpu_list)
 
 # cuda visible devices
+# port number assigning
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 os.environ['MASTER_ADDR'] = 'localhost'
 os.environ['MASTER_PORT'] = args.port
@@ -93,6 +94,9 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
     net.train()
 
     train_loss = 0
+    train_loss1 = 0
+    train_loss2 = 0
+    train_loss3 = 0
     correct, adv_correct = 0, 0
     total, total_g = 0, 0
 
@@ -116,33 +120,23 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         optimizer.zero_grad()
         with autocast():
             # network propagation
-            adv_outputs1 = net(adv_inputs1)
             outputs1 = net(inputs1)
-            base_loss = mart_loss(outputs1, adv_outputs1, targets1)
+            adv_outputs1 = net(adv_inputs1)
+            loss1 = mart_loss(outputs1, adv_outputs1, targets1) \
+                if args.dataset == 'cifar10' else F.cross_entropy(adv_outputs1, targets1)
 
             # network propagation
             adv_outputs2 = net(adv_inputs2)
             outputs2 = net(inputs2)
 
-            # attack
-            is_attack2 = adv_outputs2.max(1)[1] != targets2
-            is_not_attack2 = ~is_attack2
+            # dml loss
+            loss2 = dml_loss(outputs2, adv_outputs2, targets2)
 
-            # Theta: Target
-            Y_do_T1 = (targets2.shape[0] / is_attack2.sum()-1) * mart_loss(outputs2[is_attack2], adv_outputs2[is_attack2], targets2[is_attack2])
-            Y_do_g1 = (targets2.shape[0] / is_not_attack2.sum()-1) * mart_loss(outputs2[is_not_attack2], adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss1 = Y_do_T1 - Y_do_g1
+            # mart loss
+            loss3 = mart_loss(outputs2, adv_outputs2, targets2)
 
-            # Theta: Adv-Target + Non-Target
-            Y_do_T2 = (targets2.shape[0] / is_attack2.sum() - 1) * adv_target_dml(adv_outputs2[is_attack2], adv_outputs2.max(1)[1][is_attack2])
-            Y_do_g2 = (targets2.shape[0] / is_not_attack2.sum() - 1) * non_target_dml(adv_outputs2[is_not_attack2], targets2[is_not_attack2])
-            dml_loss2 = Y_do_T2 - Y_do_g2
-
-            # DML loss
-            dml_loss = dml_loss1 + dml_loss2
-
-            # Total Loss
-            loss = base_loss + dml_loss.abs()
+            # Theta
+            loss = loss1 + (loss2 if args.dataset == 'cifar10' else 0.5*(loss2 + loss3))
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -155,10 +149,12 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         lr_scheduler.step()
 
         train_loss += loss.item()
+        train_loss1 += loss1.item()
+        train_loss2 += loss2.item()
+        train_loss3 += loss3.item()
 
         # for test
         with autocast():
-
             adv_outputs = net(adv_inputs)
             outputs = net(inputs)
 
@@ -170,8 +166,9 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         correct += predicted.eq(targets).sum().item()
         adv_correct += adv_predicted.eq(targets).sum().item()
 
-        desc = ('[Tr/lr=%.3f] Loss: (F/G) %.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
-                (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), 100. * correct / total, 100. * adv_correct / total))
+        desc = ('[Tr/lr=%.3f] Loss: %.3f=%.3f+%.3f+%.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
+                (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), train_loss1 / (batch_idx + 1), train_loss2 / (batch_idx + 1), train_loss3 / (batch_idx + 1),
+                 100. * correct / total, 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
 
 

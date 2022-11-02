@@ -22,8 +22,9 @@ parser = argparse.ArgumentParser()
 
 # model parameter
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vit', type=str)
-parser.add_argument('--depth', default=12, type=int)
+parser.add_argument('--network', default='vgg', type=str)
+parser.add_argument('--depth', default=16, type=int)
+parser.add_argument('--base', default='awp', type=str)
 parser.add_argument('--batch_size', default=128, type=float)
 parser.add_argument('--gpu', default='1', type=str)
 
@@ -57,28 +58,18 @@ netF = get_network(network=args.network, depth=args.depth, dataset=args.dataset,
                   img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
 netF = netF.cuda()
 
-# init model G
-netG = get_network(network=args.network, depth=args.depth, dataset=args.dataset, tran_type=args.tran_type,
-                  img_size=args.img_resize, patch_size=args.patch_size, pretrain=False)
-netG = netG.cuda()
 
+# checkpoint base tag
+base_tag = '' if args.base == 'standard' else '_' + args.base
 # setting checkpoint name
-if args.network in ['vit', 'deit']:
-    net_checkpoint_name = 'checkpoint/daml/%s/%s_daml_%s_%s_patch%d_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                    args.network, args.tran_type,
-                                                                                    args.patch_size, args.img_resize)
-elif args.network == 'swin':
-    net_checkpoint_name = 'checkpoint/daml/%s/%s_daml_%s_%s_patch%d_window7_%d_best.t7' % (args.dataset, args.dataset,
-                                                                                            args.network, args.tran_type,
-                                                                                            args.patch_size, args.img_resize)
+if args.network in transformer_list:
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    net_checkpoint_name = 'checkpoint/daml/%s/%s_daml_%s%s_best.t7' % (args.dataset, args.dataset, args.network, args.depth)
+    net_checkpoint_name = f'checkpoint/{args.base}/{args.dataset}/{args.dataset}{base_tag}_{args.network}{args.depth}_best.t7'
 
 # load checkpoint
 netF_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net']
-netG_checkpoint = torch.load(net_checkpoint_name, map_location=lambda storage, loc: storage.cuda())['net_aux']
 checkpoint_module(netF_checkpoint, netF)
-checkpoint_module(netG_checkpoint, netG)
 print(" [*] Loaded network params : %s" %(net_checkpoint_name.split('/')[-1]))
 
 # init criterion
@@ -87,7 +78,6 @@ criterion = nn.CrossEntropyLoss()
 
 def daml_test():
     netF.eval()
-    netG.eval()
 
     attack_module = {}
     # for attack_name in ['Plain', 'fgsm', 'pgd', 'cw_Linf', 'apgd', 'auto']:
@@ -110,18 +100,7 @@ def daml_test():
         correct_want2 = 0
         correct_want3 = 0
         correct_want4 = 0
-        correct_want5 = 0
-        correct_want6 = 0
-        correct_want7 = 0
-        correct_want8 = 0
-        correct_want9 = 0
-        correct_want10 = 0
-        correct_want11 = 0
-        correct_want12 = 0
-        correct_want13 = 0
-        correct_want14 = 0
-        correct_want15 = 0
-        correct_want16 = 0
+
         prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
 
         for batch_idx, (inputs, targets) in prog_bar:
@@ -131,54 +110,25 @@ def daml_test():
             with autocast():
                 adv_outputsF = netF(adv_inputs)
                 outputsF = netF(inputs)
-                outputsG = netG(inputs)
 
             _, adv_predictedF = adv_outputsF.max(1)
             _, predictedF = outputsF.max(1)
-            _, predictedG = (outputsF+outputsG).max(1)
 
             want1 = (predictedF == targets) * (adv_predictedF == targets)
             want2 = (predictedF != targets) * (adv_predictedF == targets)
             want3 = (predictedF == targets) * (adv_predictedF != targets)
             want4 = (predictedF != targets) * (adv_predictedF != targets)
 
-            want5 = want1 * (adv_predictedF == predictedG)
-            want6 = want1 * (adv_predictedF != predictedG)
-            want7 = want3 * (adv_predictedF == predictedG)
-            want8 = want3 * (adv_predictedF != predictedG)
-            want9 = want4 * (adv_predictedF == predictedG)
-            want10 = want4 * (adv_predictedF != predictedG)
 
-            want11=want1*(predictedG==targets)
-            want12=want1*(predictedG!=targets)
-            want13=want3*(predictedG==targets)
-            want14=want3*(predictedG!=targets)
-            want15=want4*(predictedG==targets)
-            want16=want4*(predictedG!=targets)
 
             total += targets.size(0)
             correctF += predictedF.eq(targets).sum().item()
             adv_correctF += adv_predictedF.eq(targets).sum().item()
-            correctG += predictedG.eq(targets).sum().item()
-            correctFG += predictedG.eq(adv_predictedF).sum().item()
 
             correct_want1 += want1.sum().item()
             correct_want2 += want2.sum().item()
             correct_want3 += want3.sum().item()
             correct_want4 += want4.sum().item()
-            correct_want5 += want5.sum().item()
-            correct_want6 += want6.sum().item()
-            correct_want7 += want7.sum().item()
-            correct_want8 += want8.sum().item()
-            correct_want9 += want9.sum().item()
-            correct_want10 += want10.sum().item()
-            correct_want11 += want11.sum().item()
-            correct_want12 += want12.sum().item()
-            correct_want13 += want13.sum().item()
-            correct_want14 += want14.sum().item()
-            correct_want15 += want15.sum().item()
-            correct_want16 += want16.sum().item()
-
 
             desc = (f'[Test/{key}] Clean: {100.*correctF/total:.2f}% | Adv: {100.*adv_correctF/total:.2f}% | G ACC: {100.*correctG/total:.2f}% | FG similarity: {100.*correctFG/total:.2f}%')
             prog_bar.set_description(desc, refresh=True)
@@ -192,13 +142,6 @@ def daml_test():
         print(100. * correct_want3 / total)
         print('(predictedF != targets) * (adv_predictedF != targets)')
         print(100. * correct_want4 / total)
-        print('------------------------')
-        print('(adv_predictedF == predictedG)+(adv_predictedF != predictedG)=(predictedG==targets)+(predictedG!=targets)')
-        print(f'{100. * correct_want1 / total}={100. * correct_want5 / total}+{100. * correct_want6 / total}={100. * correct_want11 / total}+{100. * correct_want12 / total}')
-        print('------------------------')
-        print(f'{100. * correct_want3 / total}={100. * correct_want7 / total}+{100. * correct_want8 / total}={100. * correct_want13 / total}+{100. * correct_want14 / total}')
-        print('------------------------')
-        print(f'{100. * correct_want4 / total}={100. * correct_want9 / total}+{100. * correct_want10 / total}={100. * correct_want15 / total}+{100. * correct_want16 / total}')
         print('------------------------')
 
         # fast eval
@@ -219,70 +162,8 @@ def class_num(dataset_name):
     else:
         raise ValueError
 
-def gen_drift_matrix(class_num, pred, targets, conf=False):
-    confindence, predicted = pred.max(1)
-
-    drift_matrix = torch.zeros([class_num[0], class_num[0]])
-    conf_matrix = torch.zeros([class_num[0], class_num[0]])
-    if conf:
-        for index in range(predicted.shape[0]):
-            drift_matrix[targets[index], predicted[index]] += 1
-            conf_matrix[targets[index], predicted[index]] += confindence[index].cpu().detach()
-
-        out_matrix = conf_matrix / drift_matrix
-
-    else:
-        for index in range(predicted.shape[0]):
-            drift_matrix[targets[index], predicted[index]] += 1
-
-        out_matrix = drift_matrix
-    return out_matrix
-
-def measure_adversarial_drift():
-    netF.eval()
-
-    attack_module = {}
-    for attack_name in ['pgd']:
-        args.attack = attack_name
-        if args.dataset == 'imagenet':
-            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/4, steps=args.steps)
-        elif args.dataset == 'tiny':
-            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps/2, steps=args.steps)
-        else:
-            attack_module[attack_name] = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
-
-    # drift matrix initialization
-    drift_matrix = torch.eye(class_num(args.dataset)[0]).fill_(0)
-    pred_matrix = torch.eye(class_num(args.dataset)[0]).fill_(0)
-
-    for key in attack_module:
-        total = 0
-        adv_correct = 0
-        prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=True)
-
-        for batch_idx, (inputs, targets) in prog_bar:
-            inputs, targets = inputs.cuda(), targets.cuda()
-            adv_inputs = attack_module[key](inputs, targets)
-
-            adv_output = netF(adv_inputs)
-            _, adv_predicted = adv_output.max(1)
-
-            # drift matrix update
-            #drift_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets)
-            pred_matrix += gen_drift_matrix(class_num(args.dataset), adv_output, targets, conf=True)
-
-            total += targets.size(0)
-            adv_correct += adv_predicted.eq(targets).sum().item()
-
-            desc = ('[Test/%s] Adv: %.4f%%' % (key, 100. * adv_correct / total))
-            prog_bar.set_description(desc, refresh=True)
-
-        pred_matrix = pred_matrix / (batch_idx + 1)
-
-        print("ok")
 
 if __name__ == '__main__':
     daml_test()
-    #measure_adversarial_drift()
 
 

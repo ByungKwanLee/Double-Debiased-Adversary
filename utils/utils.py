@@ -330,9 +330,8 @@ def test_whitebox(net, dataset, testloader, attack_list, steps, eps, rank):
             correct += predicted.eq(targets).sum().item()
 
             # fast eval
-            if dataset == 'imagenet' or key == 'cw_linf' or key == 'fab' or key == 'aa':
-                if batch_idx >= int(len(testloader) * 0.2):
-                    break
+            if batch_idx >= int(len(testloader) * 0.2):
+                break
 
 
             desc = ('[White-Box-Test/%s] Acc: %.2f%% (%d/%d)'
@@ -370,9 +369,8 @@ def test_blackbox(plain_net, adv_net, dataset, testloader, attack_list, steps, e
             correct += predicted.eq(targets).sum().item()
 
             # fast eval
-            if dataset == 'imagenet' or key == 'fab' or key == 'aa':
-                if batch_idx >= int(len(testloader) * 0.2):
-                    break
+            if batch_idx >= int(len(testloader) * 0.2):
+                break
 
             desc = ('[Black-Box-Test/%s] Acc: %.2f%% (%d/%d)'
                     % (key, 100. * correct / total, correct, total))
@@ -435,17 +433,16 @@ class AdvWeightPerturb(object):
     def restore(self, diff):
         add_into_weights(self.model, diff, coeff=-1.0 * self.gamma)
 
-def non_target_dml(pred, targets):
-    prob = pred.softmax(dim=1)
 
-    # all non-target
-    non_target = (1-prob) * (1-get_onehot(pred, targets)) + get_onehot(pred, targets)
-    return -(non_target.log().sum(dim=1)/(prob.shape[1]-1)).mean()
+def dml_loss(pred, adv_pred, targets):
+    is_attack = adv_pred.max(1)[1] != targets
+    adv_prob = adv_pred.softmax(dim=1)
+    tar_prob = adv_prob[is_attack] * get_onehot(adv_pred[is_attack], targets[is_attack])
+    ntar_prob = adv_prob[is_attack] * get_onehot(adv_pred[is_attack], adv_pred.max(1)[1][is_attack])
+    return ((1/ntar_prob.sum(dim=1).detach()-1) * -(tar_prob.sum(dim=1)+1e-3).log()).mean() \
+            + ((1/ntar_prob.sum(dim=1).detach()-1) * (ntar_prob.sum(dim=1)+1e-3).log()).mean() \
+            + F.cross_entropy(pred, targets)
 
-def adv_target_dml(pred, adv_targets):
-    prob = pred.softmax(dim=1)
 
-    # all non-target
-    non_target =  (1-prob) * get_onehot(pred, adv_targets)
-    return -non_target.sum(dim=1).log().mean()
+
 
