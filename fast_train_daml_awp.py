@@ -154,21 +154,19 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
         train_loss3 += loss3.item()
 
         # for test
-        with autocast():
-            adv_outputs = net(adv_inputs)
-            outputs = net(inputs)
-
-        _, adv_predicted = adv_outputs.max(1)
-        _, predicted = outputs.max(1)
+        _, adv_predicted1 = adv_outputs1.max(1)
+        _, adv_predicted2 = adv_outputs2.max(1)
+        _, predicted2 = outputs2.max(1)
 
         total += targets.size(0)
         total_g += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
-        adv_correct += adv_predicted.eq(targets).sum().item()
+        correct += predicted2.eq(targets2).sum().item()
+        adv_correct += adv_predicted1.eq(targets1).sum().item()
+        adv_correct += adv_predicted2.eq(targets2).sum().item()
 
         desc = ('[Tr/lr=%.3f] Loss: %.3f=%.3f+%.3f+%.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), train_loss1 / (batch_idx + 1), train_loss2 / (batch_idx + 1), train_loss3 / (batch_idx + 1),
-                 100. * correct / total, 100. * adv_correct / total))
+                 100. * correct / (total / 2), 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
 
 

@@ -32,10 +32,10 @@ parser = argparse.ArgumentParser()
 # model parameter
 parser.add_argument('--NAME', default='DAML-ADV', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str)
-parser.add_argument('--network', default='vgg', type=str)
-parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--port', default="12000", type=str)
+parser.add_argument('--network', default='vit', type=str)
+parser.add_argument('--depth', default=12, type=int) # 12 for vit
+parser.add_argument('--gpu', default='0,1,2,3,4', type=str)
+parser.add_argument('--port', default="12356", type=str)
 
 # transformer parameter
 parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
@@ -49,7 +49,7 @@ parser.add_argument('--epochs', default=10, type=int)
 parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=128, type=float)
+parser.add_argument('--test_batch_size', default=64, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
 # attack parameter
@@ -139,23 +139,20 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank, write
         train_loss2 += loss2.item()
 
         # for test
-        with autocast():
-
-            adv_outputs = net(adv_inputs)
-            outputs = net(inputs)
-
-        _, adv_predicted = adv_outputs.max(1)
-        _, predicted = outputs.max(1)
+        _, adv_predicted1 = adv_outputs1.max(1)
+        _, adv_predicted2 = adv_outputs2.max(1)
+        _, predicted2 = outputs2.max(1)
 
         total += targets.size(0)
         total_g += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
-        adv_correct += adv_predicted.eq(targets).sum().item()
+        correct += predicted2.eq(targets2).sum().item()
+        adv_correct += adv_predicted1.eq(targets1).sum().item()
+        adv_correct += adv_predicted2.eq(targets2).sum().item()
 
         desc = ('[Tr/lr=%.3f] Loss: %.3f=%.3f+%.3f | Acc: (Clean) %.2f%% | Acc: (PGD) %.2f%%' %
                 (lr_scheduler.get_lr()[0], train_loss / (batch_idx + 1), train_loss1 / (batch_idx + 1),
                  train_loss2 / (batch_idx + 1),
-                 100. * correct / total, 100. * adv_correct / total))
+                 100. * correct / (total / 2), 100. * adv_correct / total))
         prog_bar.set_description(desc, refresh=True)
 
 def test(net, testloader, attack, rank):
@@ -293,8 +290,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     # optimizer network concurrent
     optimizer = optim.SGD(net.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=args.learning_rate,
-                                                    step_size_up=int(round(args.epochs/5))*len(trainloader),
-                                                    step_size_down=args.epochs*len(trainloader)-int(round(args.epochs/5))*len(trainloader))
+                                                     step_size_up=int(round(args.epochs / 5)) * len(trainloader),
+                                                     step_size_down=args.epochs * len(trainloader) - int(
+                                                         round(args.epochs / 5)) * len(trainloader))
 
     writer = SummaryWriter(log_dir=log_dir) if rank == 0 else None
 
