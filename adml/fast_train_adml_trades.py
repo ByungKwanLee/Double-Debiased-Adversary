@@ -29,17 +29,17 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--NAME', default='DAML-TRADES', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--NAME', default='ADML-TRADES', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12001", type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12000", type=str)
 
 # transformer parameter
-parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
-parser.add_argument('--img_resize', default=224, type=int, help='32/224')
-parser.add_argument('--tran_type', default='small', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--patch_size', default=16, type=int, help='16')
+parser.add_argument('--img_resize', default=224, type=int, help='224')
+parser.add_argument('--tran_type', default='small', type=str, help='small/base')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
@@ -47,8 +47,8 @@ parser.add_argument("--num_steps", default=10000, type=int)
 parser.add_argument('--epochs', default=10, type=int)
 parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--batch_size', default=64, type=float)
-parser.add_argument('--test_batch_size', default=64, type=float)
+parser.add_argument('--batch_size', default=128, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
 # attack parameter
@@ -79,15 +79,15 @@ check_dir(log_dir)
 
 # make checkpoint folder and set checkpoint name for saving
 if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
-if not os.path.isdir(f'checkpoint/daml_trades'): os.mkdir(f'checkpoint/daml_trades')
-if not os.path.isdir(f'checkpoint/daml_trades/{args.dataset}'): os.mkdir(f'checkpoint/daml_trades/{args.dataset}')
+if not os.path.isdir(f'checkpoint/adml_trades'): os.mkdir(f'checkpoint/adml_trades')
+if not os.path.isdir(f'checkpoint/adml_trades/{args.dataset}'): os.mkdir(f'checkpoint/adml_trades/{args.dataset}')
 if args.network in transformer_list:
-    saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+    saving_ckpt_name = f'./checkpoint/adml_trades/{args.dataset}/{args.dataset}_adml_trades_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/daml_trades/{args.dataset}/{args.dataset}_daml_trades_{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/adml_trades/{args.dataset}/{args.dataset}_adml_trades_{args.network}{args.depth}_best.t7'
 
 
-def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank):
+def train(net, trainloader, optimizer, lr_scheduler, scaler, attack):
     global counter
     net.train()
 
@@ -194,7 +194,6 @@ def test(net, testloader, attack, rank):
     correct = 0
     total = 0
 
-
     prog_bar = tqdm(enumerate(testloader), total=len(testloader), leave=False)
     for batch_idx, (inputs, targets) in prog_bar:
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -248,7 +247,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
-    # Load ADV or Standard Network
+    # Load ADV Network
     if args.network in transformer_list:
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
@@ -264,8 +263,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
-    net.load_state_dict(checkpoint['net'])
 
+    # load checkpoint
+    net.load_state_dict(checkpoint['net'])
     rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
@@ -281,14 +281,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/4, steps=args.steps)
     elif args.dataset == 'tiny':
-        if args.network in transformer_list:
-            rprint('PGD and FGSM MIX training', rank)
-            pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps / 2, steps=args.steps)
-            fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps / 2, steps=args.steps)
-            attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
-        else:
-            rprint('Fast FGSM training', rank)
-            attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps / 2, steps=args.steps)
+        rprint('PGD and FGSM MIX training', rank)
+        pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps/2, steps=args.steps)
+        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
+        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
@@ -312,7 +308,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
                                      end_ramp=int(math.floor(args.epochs * 0.7)))
             decoder.output_size = (res, res)
 
-        train(net, trainloader, optimizer, lr_scheduler, scaler, attack, rank)
+        train(net, trainloader, optimizer, lr_scheduler, scaler, attack)
         test(net, testloader, attack, rank)
 
 def run():

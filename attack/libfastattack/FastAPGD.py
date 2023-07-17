@@ -9,7 +9,7 @@ from torchattacks.attack import Attack
 class FastAPGD(Attack):
 
     def __init__(self, model, eps=8 / 255, steps=100, n_restarts=1,
-                 seed=0, loss='ce', eot_iter=1, rho=.75):
+                 seed=0, loss='ce', eot_iter=1, rho=.75, scale=1e-1):
         super().__init__("FastAPGD", model)
         self.eps = eps
         self.steps = steps
@@ -20,7 +20,7 @@ class FastAPGD(Attack):
         self.thr_decr = rho
         self._supported_mode = ['default']
         self.scaler = GradScaler()
-        self.scale = 1e-1
+        self.scale = scale
 
     def forward(self, images, labels):
         r"""
@@ -46,8 +46,8 @@ class FastAPGD(Attack):
         x_sorted, ind_sorted = x.sort(dim=1)
         ind = (ind_sorted[:, -1] == y).float()
 
-        return -(x[np.arange(x.shape[0]), y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (1. - ind)) / (
-                    x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
+        return -1e-3 * (x[np.arange(x.shape[0]), y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (1. - ind)) / (
+                    x_sorted[:, -1] - x_sorted[:, -3] + 1e-12) + nn.CrossEntropyLoss(reduction='none')(x,y)
 
     def attack_single_run(self, x_in, y_in):
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
@@ -88,7 +88,7 @@ class FastAPGD(Attack):
                 # Update adversarial images with gradient scaler applied
                 scaled_loss = self.scaler.scale(loss)
 
-            grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach() / (scaled_loss/loss).detach()  # 1 backward pass (eot_iter = 1)
+            grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach() # 1 backward pass (eot_iter = 1)
 
         grad /= float(self.eot_iter)
         grad_best = grad.clone()
@@ -140,7 +140,7 @@ class FastAPGD(Attack):
                     # Update adversarial images with gradient scaler applied
                     scaled_loss = self.scaler.scale(loss)
 
-                grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach()/(scaled_loss/loss).detach()  # 1 backward pass (eot_iter = 1)
+                grad += torch.autograd.grad(scaled_loss, [x_adv])[0].detach() # 1 backward pass (eot_iter = 1)
 
             grad /= float(self.eot_iter)
 

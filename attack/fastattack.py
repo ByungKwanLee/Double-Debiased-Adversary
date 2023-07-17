@@ -4,8 +4,8 @@ from attack.libfastattack.FastMIM import FastMIM
 from attack.libfastattack.FastBIM import FastBIM
 from attack.libfastattack.FastPGD import FastPGD
 from attack.libfastattack.FastCWLinf import FastCWLinf
-from attack.libfastattack.FastFAB import FastFAB
 from attack.libfastattack.FastAPGD import FastAPGD
+from attack.libfastattack.FastFAB import FastFAB
 from attack.libfastattack.FastAutoAttack import FastAutoAttack
 
 def attack_loader(net, attack, eps, steps):
@@ -32,16 +32,25 @@ def attack_loader(net, attack, eps, steps):
         return FastCWLinf(model=net, eps=eps, steps=steps)
 
     elif attack == "ap":
-        return FastAPGD(model=net, eps=eps, loss='ce', steps=steps)
+        return FastAPGD(model=net, eps=eps, loss='ce', steps=steps, rho=.75)
 
     elif attack == "dlr":
-        return FastAPGD(model=net, eps=eps, loss='dlr', steps=steps)
+        return FastAPGD(model=net, eps=eps, loss='dlr', steps=steps, rho=.75)
 
     elif attack == "fab":
-        return FastFAB(model=net, eps=eps, alpha_max=0.1, eta=1.05, beta=0.9)
+        return FastFAB(model=net, eps=eps)
 
-    elif attack == "aa":
-        return FastAutoAttack(model=net, eps=eps, steps=steps, alpha_max=0.1, eta=1.05, beta=0.9)
+    elif attack == "aa_standard":
+        return FastAutoAttack(model=net, eps=eps, steps=steps, version="standard")
+
+    elif attack == "aa_plus":
+        return FastAutoAttack(model=net, eps=eps, steps=steps, version="plus")
+
+    elif attack == "aa_rand":
+        return FastAutoAttack(model=net, eps=eps, steps=steps, version="rand")
+
+    elif attack == "aa_custom":
+        return FastAutoAttack(model=net, eps=eps, steps=steps, version="custom")
 
 
 

@@ -4,10 +4,6 @@ from models.resnet import resnet
 from models.wide import wide_resnet
 from models.vision_transformer import vit
 from models.distill_transformer import deit
-from models.swin_transformer import swin
-from models.cattention_transformer import cait
-from models.tnt_transformer import tnt
-from models.tnt_transformer_b import tnt_b
 
 def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretrain):
 
@@ -24,8 +20,7 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
         mean = torch.tensor([0.485, 0.456, 0.406]).cuda()
         std = torch.tensor([0.229, 0.224, 0.225]).cuda()
     else:
-        mean = torch.tensor([0.485, 0.456, 0.406]).cuda()
-        std = torch.tensor([0.229, 0.224, 0.225]).cuda()
+        raise NotImplementedError
 
     # CNN
     if network == 'vgg':
@@ -42,19 +37,6 @@ def get_network(network, depth, dataset, tran_type, img_size, patch_size, pretra
     elif network == 'deit':
         model = deit(depth=depth, deit_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
                      pretrained=pretrain, mean=mean, std=std)
-    elif network == 'swin':
-        model = swin(depth=depth, swin_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
-                     pretrained=pretrain, mean=mean, std=std)
-    elif network == 'cait':
-        model = cait(depth=depth, cait_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
-                     pretrained=pretrain, mean=mean, std=std)
-    elif network == 'tnt':
-        if tran_type == 'small':
-            model = tnt(depth=depth, tnt_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
-                         pretrained=pretrain, mean=mean, std=std)
-        else:
-            model = tnt_b(depth=depth, tnt_type=tran_type, img_size=img_size, patch_size=patch_size, dataset=dataset,
-                          pretrained=pretrain, mean=mean, std=std)
     else:
         raise NotImplementedError
 

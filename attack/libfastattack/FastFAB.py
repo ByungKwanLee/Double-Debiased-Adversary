@@ -3,35 +3,38 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import time
 import math
-
-from collections import abc as container_abcs
 
 import torch
 import torch.nn.functional as F
 
+from collections import abc as container_abcs
+
 from torch.cuda.amp import autocast
 from torchattacks.attack import Attack
 
+
 class FastFAB(Attack):
     def __init__(self, model, eps=8/255, n_restarts=1,
-                 alpha_max=0.1, eta=1.05, beta=0.9, gamma=0.4, seed=0):
+                 alpha_max=0.1, eta=1.05, beta=0.9, seed=0,
+                 multi_targeted=False, n_classes=10):
         super().__init__("FastFAB", model)
         self.n_restarts = n_restarts
         self.eps = eps
         self.alpha_max = alpha_max
         self.eta = eta
         self.beta = beta
-        self.gamma = gamma
         self.seed = seed
         self.target_class = None
+        self.multi_targeted = multi_targeted
+        self.n_target_classes = n_classes - 1
         self.supported_mode = ['default', 'targeted']
 
     def forward(self, images, labels):
         r"""
         Overridden.
         """
+
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
         adv_images = self.perturb(images, labels)
@@ -40,7 +43,8 @@ class FastFAB(Attack):
 
     def _get_predicted_label(self, x):
         with torch.no_grad():
-            outputs = self.model(x)
+            with autocast():
+                outputs = self.model(x)
         _, y = torch.max(outputs, dim=1)
         return y
 
@@ -66,7 +70,7 @@ class FastFAB(Attack):
         y2 = y.detach()
         df = y2 - y2[torch.arange(imgs.shape[0]), la].unsqueeze(1)
         dg = g2 - g2[torch.arange(imgs.shape[0]), la].unsqueeze(1)
-        df[torch.arange(imgs.shape[0]), la] = 1e3
+        df[torch.arange(imgs.shape[0]), la] = 1e4
 
         return df, dg
 
@@ -76,8 +80,8 @@ class FastFAB(Attack):
         with torch.enable_grad():
             with autocast():
                 y = self.model(im)
-                diffy = -(y[u, la] - y[u, la_target])
-                sumdiffy = diffy.sum()
+            diffy = -(y[u, la] - y[u, la_target])
+            sumdiffy = diffy.sum()
 
         zero_gradients(im)
         sumdiffy.backward()
@@ -107,11 +111,11 @@ class FastFAB(Attack):
             y = y.detach().clone().long().to(self.device)
         pred = y_pred == y
         corr_classified = pred.float().sum()
+
         if pred.sum() == 0:
             return x
         pred = self.check_shape(pred.nonzero().squeeze())
 
-        startt = time.time()
         # runs the attack only on correctly classified points
         im2 = x[pred].detach().clone()
         la2 = y[pred].detach().clone()
@@ -131,67 +135,68 @@ class FastFAB(Attack):
             if use_rand_start:
                 t = 2 * torch.rand(x1.shape).to(self.device) - 1
                 x1 = im2 + (torch.min(res2,
-                                      self.eps *(1+self.gamma)* torch.ones(res2.shape)
+                                      self.eps * torch.ones(res2.shape)
                                       .to(self.device)
                                       ).reshape([-1, *[1]*self.ndims])
                             ) * t / (t.reshape([t.shape[0], -1]).abs()
                                      .max(dim=1, keepdim=True)[0]
                                      .reshape([-1, *[1]*self.ndims])) * .5
+
+
                 x1 = x1.clamp(0.0, 1.0)
 
             counter_iter = 0
-            while counter_iter < 3:
-                with torch.no_grad():
-                    df, dg = self.get_diff_logits_grads_batch(x1, la2)
-                    dist1 = df.abs() / (1e-12 +
-                                        dg.abs()
-                                        .view(dg.shape[0], dg.shape[1], -1)
-                                        .sum(dim=-1))
-                    ind = dist1.min(dim=1)[1]
-                    dg2 = dg[u1, ind]
-                    b = (- df[u1, ind] + (dg2 * x1).view(x1.shape[0], -1)
-                                         .sum(dim=-1))
-                    w = dg2.reshape([bs, -1])
+            with torch.no_grad():
+                df, dg = self.get_diff_logits_grads_batch(x1, la2)
+                dist1 = df.abs() / (1e-12 +
+                                    dg.abs()
+                                    .reshape(dg.shape[0], dg.shape[1], -1)
+                                    .sum(dim=-1))
 
-                    d3 = projection_linf(
-                        torch.cat((x1.reshape([bs, -1]), x0), 0),
-                        torch.cat((w, w), 0),
-                        torch.cat((b, b), 0))
-                    d1 = torch.reshape(d3[:bs], x1.shape)
-                    d2 = torch.reshape(d3[-bs:], x1.shape)
-                    a0 = d3.abs().max(dim=1, keepdim=True)[0]\
-                        .view(-1, *[1]*self.ndims)
+                ind = dist1.min(dim=1)[1]
+                dg2 = dg[u1, ind]
+                b = (- df[u1, ind] + (dg2 * x1).reshape(x1.shape[0], -1)
+                     .sum(dim=-1))
+                w = dg2.reshape([bs, -1])
 
-                    a0 = torch.max(a0, 1e-8 * torch.ones(
-                        a0.shape).to(self.device))
-                    a1 = a0[:bs]
-                    a2 = a0[-bs:]
-                    alpha = torch.min(torch.max(a1 / (a1 + a2),
-                                                torch.zeros(a1.shape)
-                                                .to(self.device)),
-                                      self.alpha_max * torch.ones(a1.shape)
-                                      .to(self.device))
-                    x1 = ((x1 + self.eta * d1) * (1 - alpha) +
-                          (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
+                d3 = projection_linf(
+                    torch.cat((x1.reshape([bs, -1]), x0), 0),
+                    torch.cat((w, w), 0),
+                    torch.cat((b, b), 0))
 
-                    is_adv = self._get_predicted_label(x1) != la2
+                d1 = torch.reshape(d3[:bs], x1.shape)
+                d2 = torch.reshape(d3[-bs:], x1.shape)
+                a0 = d3.abs().max(dim=1, keepdim=True)[0]\
+                    .reshape(-1, *[1]*self.ndims)
 
-                    if is_adv.sum() > 0:
-                        ind_adv = is_adv.nonzero().squeeze()
-                        ind_adv = self.check_shape(ind_adv)
-                        t = (x1[ind_adv] - im2[ind_adv]).reshape(
-                            [ind_adv.shape[0], -1]).abs().max(dim=1)[0]
+                a0 = torch.max(a0, 1e-8 * torch.ones(
+                    a0.shape).to(self.device))
+                a1 = a0[:bs]
+                a2 = a0[-bs:]
+                alpha = torch.min(torch.max(a1 / (a1 + a2),
+                                            torch.zeros(a1.shape)
+                                            .to(self.device)),
+                                  self.alpha_max * torch.ones(a1.shape)
+                                  .to(self.device))
+                x1 = ((x1 + self.eta * d1) * (1 - alpha) +
+                      (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
 
-                        adv[ind_adv] = x1[ind_adv] * (t < res2[ind_adv]).\
-                            float().reshape([-1, *[1]*self.ndims]) + adv[ind_adv]\
-                            * (t >= res2[ind_adv]).float().reshape(
-                            [-1, *[1]*self.ndims])
-                        res2[ind_adv] = t * (t < res2[ind_adv]).float()\
-                            + res2[ind_adv] * (t >= res2[ind_adv]).float()
-                        x1[ind_adv] = im2[ind_adv] + (
-                            x1[ind_adv] - im2[ind_adv]) * self.beta
+                is_adv = self._get_predicted_label(x1) != la2
 
-                    counter_iter += 1
+                if is_adv.sum() > 0:
+                    ind_adv = is_adv.nonzero().squeeze()
+                    ind_adv = self.check_shape(ind_adv)
+                    t = (x1[ind_adv] - im2[ind_adv]).reshape(
+                        [ind_adv.shape[0], -1]).abs().max(dim=1)[0]
+
+                    adv[ind_adv] = x1[ind_adv] * (t < res2[ind_adv]).\
+                        float().reshape([-1, *[1]*self.ndims]) + adv[ind_adv]\
+                        * (t >= res2[ind_adv]).float().reshape(
+                        [-1, *[1]*self.ndims])
+                    res2[ind_adv] = t * (t < res2[ind_adv]).float()\
+                        + res2[ind_adv] * (t >= res2[ind_adv]).float()
+                    x1[ind_adv] = im2[ind_adv] + (
+                        x1[ind_adv] - im2[ind_adv]) * self.beta
 
             counter_restarts += 1
 
@@ -224,100 +229,107 @@ class FastFAB(Attack):
             y = y.detach().clone().long().to(self.device)
         pred = y_pred == y
         corr_classified = pred.float().sum()
+
         if pred.sum() == 0:
             return x
         pred = self.check_shape(pred.nonzero().squeeze())
 
         with autocast():
             output = self.model(x)
-        la_target = self.target_class
+            if self.multi_targeted:
+                la_target = output.sort(dim=-1)[1][:, -self.target_class]
+            else:
+                la_target = self.target_class
 
-        startt = time.time()
-        # runs the attack only on correctly classified points
-        im2 = x[pred].detach().clone()
-        la2 = y[pred].detach().clone()
-        la_target2 = la_target[pred].detach().clone()
-        if len(im2.shape) == self.ndims:
-            im2 = im2.unsqueeze(0)
-        bs = im2.shape[0]
-        u1 = torch.arange(bs)
-        adv = im2.clone()
-        adv_c = x.clone()
-        res2 = 1e10 * torch.ones([bs]).to(self.device)
-        res_c = torch.zeros([x.shape[0]]).to(self.device)
-        x1 = im2.clone()
-        x0 = im2.clone().reshape([bs, -1])
-        counter_restarts = 0
+            # runs the attack only on correctly classified points
+            im2 = x[pred].detach().clone()
+            la2 = y[pred].detach().clone()
+            la_target2 = la_target[pred].detach().clone()
+            if len(im2.shape) == self.ndims:
+                im2 = im2.unsqueeze(0)
+            bs = im2.shape[0]
+            u1 = torch.arange(bs)
+            adv = im2.clone()
+            adv_c = x.clone()
+            res2 = 1e10 * torch.ones([bs]).to(self.device)
+            res_c = torch.zeros([x.shape[0]]).to(self.device)
+            x1 = im2.clone()
+            x0 = im2.clone().reshape([bs, -1])
+            counter_restarts = 0
 
         while counter_restarts < 1:
             if use_rand_start:
                 t = 2 * torch.rand(x1.shape).to(self.device) - 1
                 x1 = im2 + (torch.min(res2,
-                                      self.eps * (1+self.gamma) * torch.ones(res2.shape)
+                                      self.eps * torch.ones(res2.shape)
                                       .to(self.device)
                                       ).reshape([-1, *[1]*self.ndims])
                             ) * t / (t.reshape([t.shape[0], -1]).abs()
                                      .max(dim=1, keepdim=True)[0]
                                      .reshape([-1, *[1]*self.ndims])) * .5
+
+
                 x1 = x1.clamp(0.0, 1.0)
 
             counter_iter = 0
-            while counter_iter < 3:
-                with torch.no_grad():
-                    df, dg = self.get_diff_logits_grads_batch_targeted(x1, la2, la_target2)
-                    dist1 = df.abs() / (1e-12 +
-                                        dg.abs()
-                                        .view(dg.shape[0], dg.shape[1], -1)
-                                        .sum(dim=-1))
-                    ind = dist1.min(dim=1)[1]
+            with torch.no_grad():
+                df, dg = self.get_diff_logits_grads_batch_targeted(
+                    x1, la2, la_target2)
+                dist1 = df.abs() / (1e-12 +
+                                    dg.abs()
+                                    .reshape(dg.shape[0], dg.shape[1], -1)
+                                    .sum(dim=-1))
 
-                    dg2 = dg[u1, ind]
-                    b = (- df[u1, ind] + (dg2 * x1).view(x1.shape[0], -1)
-                                         .sum(dim=-1))
-                    w = dg2.reshape([bs, -1])
+                ind = dist1.min(dim=1)[1]
 
-                    d3 = projection_linf(
-                        torch.cat((x1.reshape([bs, -1]), x0), 0),
-                        torch.cat((w, w), 0),
-                        torch.cat((b, b), 0))
-                    d1 = torch.reshape(d3[:bs], x1.shape)
-                    d2 = torch.reshape(d3[-bs:], x1.shape)
-                    a0 = d3.abs().max(dim=1, keepdim=True)[0]\
-                        .view(-1, *[1]*self.ndims)
-                    a0 = torch.max(a0, 1e-8 * torch.ones(
-                        a0.shape).to(self.device))
-                    a1 = a0[:bs]
-                    a2 = a0[-bs:]
-                    alpha = torch.min(torch.max(a1 / (a1 + a2),
-                                                torch.zeros(a1.shape)
-                                                .to(self.device)),
-                                      self.alpha_max * torch.ones(a1.shape)
-                                      .to(self.device))
-                    x1 = ((x1 + self.eta * d1) * (1 - alpha) +
-                          (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
+                dg2 = dg[u1, ind]
+                b = (- df[u1, ind] + (dg2 * x1).reshape(x1.shape[0], -1)
+                     .sum(dim=-1))
+                w = dg2.reshape([bs, -1])
 
-                    is_adv = self._get_predicted_label(x1) != la2
+                d3 = projection_linf(
+                    torch.cat((x1.reshape([bs, -1]), x0), 0),
+                    torch.cat((w, w), 0),
+                    torch.cat((b, b), 0))
 
-                    if is_adv.sum() > 0:
-                        ind_adv = is_adv.nonzero().squeeze()
-                        ind_adv = self.check_shape(ind_adv)
-                        t = (x1[ind_adv] - im2[ind_adv]).reshape(
-                            [ind_adv.shape[0], -1]).abs().max(dim=1)[0]
+                d1 = torch.reshape(d3[:bs], x1.shape)
+                d2 = torch.reshape(d3[-bs:], x1.shape)
+                a0 = d3.abs().max(dim=1, keepdim=True)[0]\
+                    .reshape(-1, *[1]*self.ndims)
 
-                        adv[ind_adv] = x1[ind_adv] * (t < res2[ind_adv]).\
-                            float().reshape([-1, *[1]*self.ndims]) + adv[ind_adv]\
-                            * (t >= res2[ind_adv]).float().reshape(
-                            [-1, *[1]*self.ndims])
-                        res2[ind_adv] = t * (t < res2[ind_adv]).float()\
-                            + res2[ind_adv] * (t >= res2[ind_adv]).float()
-                        x1[ind_adv] = im2[ind_adv] + (
-                            x1[ind_adv] - im2[ind_adv]) * self.beta
+                a0 = torch.max(a0, 1e-8 * torch.ones(
+                    a0.shape).to(self.device))
+                a1 = a0[:bs]
+                a2 = a0[-bs:]
+                alpha = torch.min(torch.max(a1 / (a1 + a2),
+                                            torch.zeros(a1.shape)
+                                            .to(self.device)),
+                                  self.alpha_max * torch.ones(a1.shape)
+                                  .to(self.device))
+                x1 = ((x1 + self.eta * d1) * (1 - alpha) +
+                      (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
 
-                    counter_iter += 1
+                is_adv = self._get_predicted_label(x1) != la2
+
+                if is_adv.sum() > 0:
+                    ind_adv = is_adv.nonzero().squeeze()
+                    ind_adv = self.check_shape(ind_adv)
+                    t = (x1[ind_adv] - im2[ind_adv]).reshape(
+                        [ind_adv.shape[0], -1]).abs().max(dim=1)[0]
+
+                    adv[ind_adv] = x1[ind_adv] * (t < res2[ind_adv]).\
+                        float().reshape([-1, *[1]*self.ndims]) + adv[ind_adv]\
+                        * (t >= res2[ind_adv]).float().reshape(
+                        [-1, *[1]*self.ndims])
+                    res2[ind_adv] = t * (t < res2[ind_adv]).float()\
+                        + res2[ind_adv] * (t >= res2[ind_adv]).float()
+                    x1[ind_adv] = im2[ind_adv] + (
+                        x1[ind_adv] - im2[ind_adv]) * self.beta
 
             counter_restarts += 1
 
         ind_succ = res2 < 1e10
+
 
         res_c[pred] = res2 * ind_succ.float() + 1e10 * (1 - ind_succ.float())
         ind_succ = self.check_shape(ind_succ.nonzero().squeeze())
@@ -331,7 +343,6 @@ class FastFAB(Attack):
             with autocast():
                 acc = self.model(x).max(1)[1] == y
 
-            startt = time.time()
 
             torch.random.manual_seed(self.seed)
             torch.cuda.random.manual_seed(self.seed)
@@ -339,24 +350,38 @@ class FastFAB(Attack):
             def inner_perturb(targeted):
                 for counter in range(self.n_restarts):
                     ind_to_fool = acc.nonzero().squeeze()
-                    if len(ind_to_fool.shape) == 0: ind_to_fool = ind_to_fool.unsqueeze(0)
+                    if len(ind_to_fool.shape) == 0:
+                        ind_to_fool = ind_to_fool.unsqueeze(0)
                     if ind_to_fool.numel() != 0:
-                        x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()
+                        x_to_fool, y_to_fool = x[ind_to_fool].clone(), y[ind_to_fool].clone()  # nopep8
 
                         if targeted:
-                            adv_curr = self.attack_single_run_targeted(x_to_fool, y_to_fool, use_rand_start=(counter > 0))
+                            adv_curr = self.attack_single_run_targeted(
+                                x_to_fool, y_to_fool, use_rand_start=(counter > 0))
                         else:
-                            adv_curr = self.attack_single_run(x_to_fool, y_to_fool, use_rand_start=(counter > 0))
+                            adv_curr = self.attack_single_run(
+                                x_to_fool, y_to_fool, use_rand_start=(counter > 0))
 
                         with autocast():
-                            acc_curr = self.model(adv_curr).max(1)[1] == y_to_fool
-                        res = (x_to_fool - adv_curr).abs().reshape(x_to_fool.shape[0], -1).max(1)[0]
-                        acc_curr = torch.max(acc_curr, res > self.eps * (1+self.gamma))
+                            acc_curr = self.model(adv_curr).max(1)[
+                                1] == y_to_fool
+                            res = (x_to_fool - adv_curr).abs().reshape(x_to_fool.shape[0], -1).max(1)[0]  # nopep8
 
-                        ind_curr = (acc_curr == 0).nonzero().squeeze()
-                        acc[ind_to_fool[ind_curr]] = 0
-                        adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone().half()
-            inner_perturb(targeted=False)
+                            acc_curr = torch.max(acc_curr, res > self.eps)
+
+                            ind_curr = (acc_curr == 0).nonzero().squeeze()
+                            acc[ind_to_fool[ind_curr]] = 0
+                            adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].half().clone()
+
+            if self.multi_targeted:
+                for target_class in range(2, self.n_target_classes + 2):
+                    self.target_class = target_class
+                    inner_perturb(targeted=True)
+            elif self.targeted:
+                self.target_class = self.get_target_label(x, y)
+                inner_perturb(targeted=True)
+            else:
+                inner_perturb(targeted=False)
         return adv
 
 
@@ -397,7 +422,7 @@ def projection_linf(points_to_project, w_hyperplane, b_hyperplane):
 
         counter2 = counter4.long().unsqueeze(1)
         indcurr = indp_.gather(1, indp_.size(1) - 1 - counter2)
-        b2 = (sb_.gather(1, counter2) - s_.gather(1, counter2) * p_.gather(1, indcurr)).squeeze(1)
+        b2 = (sb_.gather(1, counter2) - s_.gather(1, counter2) * p_.gather(1, indcurr)).squeeze(1)  # nopep8
         c = b_ - b2 > 0
 
         lb = torch.where(c, counter4, lb)
@@ -406,11 +431,14 @@ def projection_linf(points_to_project, w_hyperplane, b_hyperplane):
     lb = lb.long()
 
     if c_l.any():
-        lmbd_opt = torch.clamp_min((b[c_l] - sb[c_l, -1]) / (-s[c_l, -1]), min=0).unsqueeze(-1)
+        lmbd_opt = torch.clamp_min(
+            (b[c_l] - sb[c_l, -1]) / (-s[c_l, -1]), min=0).unsqueeze(-1)
         d[c_l] = (2 * a[c_l] - 1) * lmbd_opt
 
-    lmbd_opt = torch.clamp_min((b[c2] - sb[c2, lb]) / (-s[c2, lb]), min=0).unsqueeze(-1)
-    d[c2] = torch.min(lmbd_opt, d[c2]) * a[c2] + torch.max(-lmbd_opt, d[c2]) * (1 - a[c2])
+    lmbd_opt = torch.clamp_min(
+        (b[c2] - sb[c2, lb]) / (-s[c2, lb]), min=0).unsqueeze(-1)
+    d[c2] = torch.min(lmbd_opt, d[c2]) * a[c2] + \
+        torch.max(-lmbd_opt, d[c2]) * (1 - a[c2])
 
     return d * (w != 0).float()
 

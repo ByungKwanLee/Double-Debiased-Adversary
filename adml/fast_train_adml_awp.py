@@ -30,17 +30,17 @@ torch.autograd.profiler.profile(False)
 parser = argparse.ArgumentParser()
 
 # model parameter
-parser.add_argument('--NAME', default='DAML-AWP', type=str)
-parser.add_argument('--dataset', default='tiny', type=str)
+parser.add_argument('--NAME', default='ADML-AWP', type=str)
+parser.add_argument('--dataset', default='cifar10', type=str)
 parser.add_argument('--network', default='vgg', type=str)
 parser.add_argument('--depth', default=16, type=int) # 12 for vit
-parser.add_argument('--gpu', default='4,5,6,7', type=str)
-parser.add_argument('--port', default="12003", type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--port', default="12000", type=str)
 
 # transformer parameter
-parser.add_argument('--patch_size', default=16, type=int, help='4/16/32')
-parser.add_argument('--img_resize', default=224, type=int, help='32/224')
-parser.add_argument('--tran_type', default='base', type=str, help='tiny/small/base/large/huge')
+parser.add_argument('--patch_size', default=16, type=int, help='16')
+parser.add_argument('--img_resize', default=224, type=int, help='224')
+parser.add_argument('--tran_type', default='base', type=str, help='small/base')
 parser.add_argument('--warmup-steps', default=500, type=int)
 parser.add_argument("--num_steps", default=10000, type=int)
 
@@ -49,7 +49,7 @@ parser.add_argument('--epochs', default=10, type=int)
 parser.add_argument('--learning_rate', default=0.001, type=float) #3e-2 for ViT
 parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--batch_size', default=128, type=float)
-parser.add_argument('--test_batch_size', default=64, type=float)
+parser.add_argument('--test_batch_size', default=128, type=float)
 parser.add_argument('--pretrain', default=False, type=bool)
 
 # attack parameter
@@ -81,12 +81,12 @@ check_dir(log_dir)
 
 # make checkpoint folder and set checkpoint name for saving
 if not os.path.isdir(f'checkpoint'): os.mkdir(f'checkpoint')
-if not os.path.isdir(f'checkpoint/daml_awp'): os.mkdir(f'checkpoint/daml_awp')
-if not os.path.isdir(f'checkpoint/daml_awp/{args.dataset}'): os.mkdir(f'checkpoint/daml_awp/{args.dataset}')
+if not os.path.isdir(f'checkpoint/adml_awp'): os.mkdir(f'checkpoint/adml_awp')
+if not os.path.isdir(f'checkpoint/adml_awp/{args.dataset}'): os.mkdir(f'checkpoint/adml_awp/{args.dataset}')
 if args.network in transformer_list:
-    saving_ckpt_name = f'./checkpoint/daml_awp/{args.dataset}/{args.dataset}_daml_awp_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
+    saving_ckpt_name = f'./checkpoint/adml_awp/{args.dataset}/{args.dataset}_adml_awp_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
 else:
-    saving_ckpt_name = f'./checkpoint/daml_awp/{args.dataset}/{args.dataset}_daml_awp_{args.network}{args.depth}_best.t7'
+    saving_ckpt_name = f'./checkpoint/adml_awp/{args.dataset}/{args.dataset}_adml_awp_{args.network}{args.depth}_best.t7'
 
 
 def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
@@ -136,7 +136,7 @@ def train(net, trainloader, optimizer, lr_scheduler, scaler, attack, awp):
             loss3 = mart_loss(outputs2, adv_outputs2, targets2)
 
             # Theta
-            loss = loss1 + (loss2 if args.dataset == 'cifar10' else 0.5*(loss2 + loss3))
+            loss = loss1 + (loss2 if args.dataset == 'cifar10' else 0.5*(loss2+loss3))
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -242,7 +242,7 @@ def test(net, testloader, attack, rank):
     adv_acc = 100. * correct / total
 
     # compute acc
-    acc = (clean_acc + adv_acc) / 2
+    acc = (adv_acc + clean_acc) / 2
 
     # current accuracy print
     rprint(f'Current Accuracy is {clean_acc:.2f}/{adv_acc:.2f}!!', rank)
@@ -270,12 +270,12 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     print(f'Use GPU: {gpu_list[rank]} for training')
     dist.init_process_group(backend='nccl', world_size=ngpus_per_node, rank=rank)
 
-    # Load ADV or Standard Network
+    # Load ADV Network
     if args.network in transformer_list:
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}_{args.tran_type}_patch{args.patch_size}_{args.img_resize}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
     else:
-        # awp
+        # adv
         pretrain_ckpt_name = f'checkpoint/adv/{args.dataset}/{args.dataset}_adv_{args.network}{args.depth}_best.t7'
         checkpoint = torch.load(pretrain_ckpt_name, map_location=torch.device(torch.cuda.current_device()))
 
@@ -286,8 +286,9 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
     net = net.to(memory_format=torch.channels_last).cuda()
     net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank], output_device=[rank])
-    net.load_state_dict(checkpoint['net'])
 
+    # load checkpoint
+    net.load_state_dict(checkpoint['net'])
     rprint(f'==> {pretrain_ckpt_name}', rank)
     rprint('==> Successfully Loaded ADV checkpoint..', rank)
 
@@ -304,7 +305,7 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
     proxy = torch.nn.parallel.DistributedDataParallel(proxy, device_ids=[rank], output_device=[rank])
 
     # awp adversary
-    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=0.01, gamma=0.01, autocast=autocast,
+    awp = AdvWeightPerturb(model=net, proxy=proxy, lr=args.learning_rate*10, gamma=args.learning_rate*10, autocast=autocast,
                            GradScaler=GradScaler)
 
 
@@ -320,14 +321,10 @@ def main_worker(rank, ngpus_per_node=ngpus_per_node):
         rprint('Fast FGSM training', rank)
         attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/4, steps=args.steps)
     elif args.dataset == 'tiny':
-        if args.network in transformer_list:
-            rprint('PGD and FGSM MIX training', rank)
-            pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps / 2, steps=args.steps)
-            fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps / 2, steps=args.steps)
-            attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
-        else:
-            rprint('Fast FGSM training', rank)
-            attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps / 2, steps=args.steps)
+        rprint('PGD and FGSM MIX training', rank)
+        pgd_attack = attack_loader(net=net, attack='pgd', eps=args.eps/2, steps=args.steps)
+        fgsm_attack = attack_loader(net=net, attack='fgsm_train', eps=args.eps/2, steps=args.steps)
+        attack = MixAttack(net=net, slowattack=pgd_attack, fastattack=fgsm_attack, train_iters=len(trainloader))
     else:
         rprint('PGD training', rank)
         attack = attack_loader(net=net, attack=args.attack, eps=args.eps, steps=args.steps)
